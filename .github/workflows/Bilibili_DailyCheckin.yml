@@ -5,92 +5,81 @@
 name: Bilibili每日签到+清日志+15天保活
 
 on:
-  # 每天 UTC 17:00 = 北京时间 凌晨 01:00
   schedule:
-    - cron: '0 17 * * *'
-  # 允许手动触发运行
-  workflow_dispatch:
+    - cron: '0 17 * * *'  # UTC 17:00 = 北京时间 凌晨 01:00
+  workflow_dispatch:      # 允许手动触发
 
-# ==============================================
-#  任务一：B站自动签到、投币、做任务
-# ==============================================
 jobs:
+  # ==============================================
+  #  任务1：B站自动签到、投币、做任务
+  # ==============================================
   bilibili-task:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
 
     steps:
-      # 1. 拉取仓库代码
       - name: 拉取代码
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      # 2. 配置 Python 环境
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 3. 安装依赖库
-      - name: 安装依赖 requests loguru
+      - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install requests loguru
 
-      # 4. 运行B站自动任务
-      - name: 执行 B站签到脚本
+      - name: 执行B站签到
         env:
-          # 必填 Cookie
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
-          # 推送配置
           PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
-          # 投币相关配置
           TASK_CONFIG: ${{ secrets.TASK_CONFIG }}
           COIN_ADD_NUM: ${{ secrets.COIN_ADD_NUM }}
           COIN_SELECT_LIKE: ${{ secrets.COIN_SELECT_LIKE }}
           COIN_VIDEO_SOURCE: ${{ secrets.COIN_VIDEO_SOURCE }}
         run: python main.py
 
-# ==============================================
-#  任务二：每次运行后 → 立即清理旧日志
-# ==============================================
+  # ==============================================
+  #  任务2：每次运行后立即清理旧日志
+  # ==============================================
   clean-logs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
-    # 等待签到完成再清理
     needs: bilibili-task
 
     steps:
-      - name: 清理所有旧的运行日志
+      - name: 清理所有旧运行日志
         uses: GitRML/delete-workflow-runs@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          retain_days: 0                  # 保留0天旧日志
-          keep_minimum_runs: 1            # 只保留当前这一次记录
-          delete_workflow_pattern: '*'    # 清理所有工作流
+          retain_days: 0
+          keep_minimum_runs: 1
+          delete_workflow_pattern: '*'
           delete_consecutive_pages: 20
 
-# ==============================================
-#  任务三：每15天执行一次 → GitHub保活
-#  防止60天无活动被禁用定时任务
-# ==============================================
+  # ==============================================
+  #  任务3：每15天保活一次（已修复语法错误）
+  # ==============================================
   keepalive:
     runs-on: ubuntu-latest
     needs: clean-logs
-    # 条件：每运行15次执行一次保活
-    if: github.run_number % 15 == 0
+    # 修复：GitHub 表达式取模用 mod()，不用 %
+    if: ${{ mod(github.run_number, 15) == 0 }}
 
     steps:
-      - name: 拉取代码用于保活
+      - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 15天一次空提交保活
+      - name: 15天自动保活（空提交）
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git commit --allow-empty -m "15天自动保活 - 防止GitHub禁用"
+          git commit --allow-empty -m "15天自动保活 - 防止GitHub 60天禁用"
           git push origin ${{ github.ref }}
