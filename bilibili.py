@@ -7,7 +7,6 @@ class BilibiliTask:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
-            'Origin': 'https://www.bilibili.com',
             'Referer': 'https://www.bilibili.com/',
             'Cookie': cookie
         }
@@ -23,118 +22,164 @@ class BilibiliTask:
     def get_user_info(self):
         try:
             res = requests.get('https://api.bilibili.com/x/web-interface/nav', headers=self.headers, timeout=10)
-            return res.json()['data'] if res.json().get('code') == 0 else None
+            data = res.json()
+            if data.get('code') == 0:
+                return data['data']
         except:
             return None
+        return None
 
     # ===========================
-    # 投币经验判断
+    # 投币经验真实判断
     # ===========================
     def get_task_info(self):
         try:
             res = requests.get("https://api.bilibili.com/x/member/web/exp/log", headers=self.headers, timeout=8)
             data = res.json()
             if data.get("code") != 0:
-                return {"coin_exp":0}
+                return {"coin_exp": 0}
             coin_exp = 0
-            for item in data.get("data",{}).get("list",[]):
-                if "投币" in item.get("reason",""):
-                    coin_exp += item.get("delta",0)
-            return {"coin_exp":coin_exp}
+            for item in data.get("data", {}).get("list", []):
+                if "投币" in item.get("reason", ""):
+                    coin_exp += item.get("delta", 0)
+            return {"coin_exp": coin_exp}
         except:
-            return {"coin_exp":0}
+            return {"coin_exp": 0}
 
     # ===========================
-    # 签到
+    # 直播签到
     # ===========================
     def live_sign(self):
+        url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign"
         try:
-            res = requests.get("https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign", headers=self.headers)
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data['code'] == 0:
-                return True,"直播签到成功"
-            return False, data.get('message','签到失败')
-        except:
-            return False,"签到异常"
+                return True, "直播签到成功"
+            elif data['code'] == 101104:
+                return True, "今日已签到"
+            else:
+                return False, data.get('message', '签到失败')
+        except Exception as e:
+            return False, str(e)
 
+    # ===========================
+    # 漫画签到
+    # ===========================
     def manga_sign(self):
         try:
-            h = self.headers.copy()
-            h['Referer']='https://manga.bilibili.com/'
-            res = requests.post("https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn",headers=h,data={"platform":"ios"})
-            return True,"漫画签到成功"
-        except:
-            return False,"签到失败"
-
-    # ===========================
-    # ✅ 风纪委终极版（能拿案件）
-    # ===========================
-    def jury_case(self):
-        try:
-            h = self.headers.copy()
-            h['Referer'] = 'https://www.bilibili.com/account/credit/jury'
-            res = requests.get("https://api.bilibili.com/x/credit/v2/jury/case/next", headers=h, timeout=10)
+            headers = self.headers.copy()
+            headers['Referer'] = "https://manga.bilibili.com/"
+            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
+            res = requests.post(url, headers=headers, data={"platform": "ios"}, timeout=10)
             data = res.json()
-            if data.get("code") == 0 and data.get("data"):
-                return data["data"]
-            return None
+            if data.get("code") == 0:
+                return True, "漫画签到成功"
+            else:
+                return False, "漫画签到失败"
         except:
-            return None
+            return False, "漫画签到异常"
 
-    def jury_vote(self, case_id):
+    # ===========================
+    # ✅ 新版风纪委（对应：https://www.bilibili.com/judgement/index）
+    # ===========================
+    def judgement_get_case(self):
+        headers = self.headers.copy()
+        headers["Referer"] = "https://www.bilibili.com/judgement/index"
+        url = "https://api.bilibili.com/x/credit/jury/vote/case"
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            data = res.json()
+            if data.get("code") == 0:
+                return data.get("data")
+        except:
+            pass
+        return None
+
+    def judgement_vote(self, case_id, vote=2):
         if not self.csrf or not case_id:
             return False
+        headers = self.headers.copy()
+        headers["Referer"] = "https://www.bilibili.com/judgement/index"
+        url = "https://api.bilibili.com/x/credit/jury/vote/commit"
+        data = {
+            "case_id": case_id,
+            "vote": vote,
+            "csrf": self.csrf
+        }
         try:
-            h = self.headers.copy()
-            h['Referer'] = 'https://www.bilibili.com/account/credit/jury'
-            data = {"case_id":case_id,"vote":2,"csrf":self.csrf}
-            res = requests.post("https://api.bilibili.com/x/credit/v2/jury/vote",data=data,headers=h,timeout=8)
+            res = requests.post(url, data=data, headers=headers, timeout=8)
             return res.json().get("code") == 0
         except:
             return False
 
-    def jury_daily(self):
-        cnt = 0
-        for _ in range(3):
-            case = self.jury_case()
-            if not case:
+    def judgement_daily(self):
+        count = 0
+        max_vote = 3
+        for _ in range(6):
+            if count >= max_vote:
                 break
-            if self.jury_vote(case.get("case_id")):
-                cnt +=1
-        if cnt>0:
-            return True,f"风纪委成功投票 {cnt}/3"
+            case = self.judgement_get_case()
+            if not case:
+                continue
+            case_id = case.get("case_id")
+            if self.judgement_vote(case_id, 2):
+                count += 1
+        if count > 0:
+            return True, f"风纪委完成 {count}/3 票"
         else:
-            return True,"风纪委：今日已完成(有案件也会显示这个，正常)"
+            return True, "风纪委：今日已完成或无案件"
 
     # ===========================
-    # 基础功能
+    # 视频功能
     # ===========================
     def get_dynamic_videos(self):
+        url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
         try:
-            res = requests.get('https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1',headers=self.headers)
+            res = requests.get(url, headers=self.headers)
             data = res.json()
-            return [v['bvid'] for v in data.get('data',{}).get('archives',[])]
+            return [video['bvid'] for video in data.get('data', {}).get('archives', [])]
         except:
             return []
 
-    def add_coin(self,bvid,num=1,like=1):
-        if not self.csrf:
-            return False,"无csrf"
-        data = {"bvid":bvid,"multiply":num,"select_like":like,"csrf":self.csrf}
+    def check_video_coin_status(self, bvid):
         try:
-            res = requests.post("https://api.bilibili.com/x/web-interface/coin/add",data=data,headers=self.headers)
-            return res.json()['code']==0, res.json().get('message','')
+            url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'
+            res = requests.get(url, headers=self.headers)
+            data = res.json()
+            return data['data']['multiply'] > 0
         except:
-            return False,"失败"
+            return False
 
-    def share_video(self,bvid):
+    def add_coin(self, bvid, num=1, select_like=1):
         if not self.csrf:
-            return False,"无csrf"
+            return False, "csrf缺失"
+        url = 'https://api.bilibili.com/x/web-interface/coin/add'
+        data = {
+            'bvid': bvid,
+            'multiply': num,
+            'select_like': select_like,
+            'csrf': self.csrf
+        }
         try:
-            requests.post("https://api.bilibili.com/x/web-interface/share/add",data={"bvid":bvid,"csrf":self.csrf},headers=self.headers)
-            return True,"分享成功"
+            res = requests.post(url, headers=self.headers, data=data)
+            data = res.json()
+            if data['code'] == 0:
+                return True, "投币成功"
+            return False, data.get('message', '投币失败')
         except:
-            return False,"分享失败"
+            return False, "请求异常"
 
-    def watch_video(self,bvid):
-        return True,"观看成功"
+    def share_video(self, bvid):
+        if not self.csrf:
+            return False, "csrf缺失"
+        url = 'https://api.bilibili.com/x/web-interface/share/add'
+        data = {'bvid': bvid, 'csrf': self.csrf}
+        try:
+            res = requests.post(url, headers=self.headers, data=data)
+            return True, "分享成功"
+        except:
+            return False, "分享异常"
+
+    def watch_video(self, bvid):
+        return True, "观看成功"
