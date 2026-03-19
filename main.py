@@ -150,3 +150,42 @@ def main():
 
 if __name__ == "__main__":
     main()
+    except Exception as e:
+        logger.error(f"TG 异常：{e}")
+
+def main():
+    config = {
+        "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),
+        "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN"),
+        "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN"),
+        "TG_CHAT_ID": os.environ.get("TG_CHAT_ID"),
+    }
+
+    if not config["BILIBILI_COOKIE"]:
+        logger.error("未配置 BILIBILI_COOKIE")
+        sys.exit(1)
+
+    cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split("###") if c.strip()]
+    final_msg = "📊 B站每日签到报告\n\n"
+
+    for idx, cookie in enumerate(cookies, 1):
+        logger.info(f"=== 账号{idx} 任务开始 ===")
+        bili = BilibiliTask(cookie)
+        tasks, user = run_all_tasks_for_account(bili, config)
+
+        final_msg += f"===== 账号{idx} =====\n"
+        for name, (ok, info) in tasks.items():
+            icon = "✅" if ok else "❌"
+            final_msg += f"{name}：{icon} {info}\n"
+            logger.info(f"[账号{idx}] {name}：{'成功' if ok else '失败'} | {info}")
+
+        logger.info("=== 任务完成 ===\n")
+
+    # 双推送
+    send_pushplus(config["PUSH_PLUS_TOKEN"], "B站签到报告", final_msg)
+    send_telegram(config["TG_BOT_TOKEN"], config["TG_CHAT_ID"], final_msg)
+
+if __name__ == "__main__":
+    main()
