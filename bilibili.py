@@ -30,7 +30,7 @@ class BilibiliTask:
             return None
 
     # ===========================
-    # ✅ 真实获取投币经验（无造假）
+    # 投币经验判断（正常真实版）
     # ===========================
     def get_task_info(self):
         try:
@@ -49,7 +49,7 @@ class BilibiliTask:
             return {"coin_exp": 0}
 
     # ===========================
-    # ✅ 原版直播签到（你老仓库代码）
+    # 直播签到
     # ===========================
     def live_sign(self):
         url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign"
@@ -66,7 +66,7 @@ class BilibiliTask:
             return False, str(e)
 
     # ===========================
-    # ✅ 原版漫画签到（你老仓库代码）
+    # 漫画签到
     # ===========================
     def manga_sign(self):
         try:
@@ -82,6 +82,60 @@ class BilibiliTask:
         except:
             return False, "漫画签到异常"
 
+    # ===========================
+    # ✅ 风纪委 —— 获取案件
+    # ===========================
+    def judgement_get_case(self):
+        url = "https://api.bilibili.com/x/credit/v2/jury/case/next"
+        try:
+            res = requests.get(url, headers=self.headers, timeout=10)
+            data = res.json()
+            if data.get("code") == 0:
+                return data["data"]
+            return None
+        except:
+            return None
+
+    # ===========================
+    # ✅ 风纪委 —— 投票（弃权）
+    # ===========================
+    def judgement_vote(self, case_id, vote=2):
+        if not self.csrf:
+            return False
+        url = "https://api.bilibili.com/x/credit/v2/jury/vote"
+        data = {
+            "case_id": case_id,
+            "vote": vote,
+            "csrf": self.csrf
+        }
+        try:
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            return data.get("code") == 0
+        except:
+            return False
+
+    # ===========================
+    # ✅ 风纪委每日任务（自动投3票）
+    # ===========================
+    def judgement_daily(self):
+        count = 0
+        max_vote = 3
+        for _ in range(max_vote):
+            case = self.judgement_get_case()
+            if not case:
+                break
+            case_id = case.get("case_id")
+            if self.judgement_vote(case_id, vote=2):
+                count += 1
+        if count > 0:
+            return True, f"风纪委完成 {count}/3 票"
+        else:
+            return True, "风纪委：今日已完成或无案件"
+
+    # ===========================
+    # 视频相关
+    # ===========================
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
         try:
