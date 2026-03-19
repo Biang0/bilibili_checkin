@@ -5,7 +5,7 @@ class BilibiliTask:
     def __init__(self, cookie):
         self.cookie = cookie
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/604.1',
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/',
             'Cookie': cookie
@@ -30,7 +30,7 @@ class BilibiliTask:
             return None
 
     # ===========================
-    # 投币经验判断（正常真实版）
+    # 真实获取投币经验
     # ===========================
     def get_task_info(self):
         try:
@@ -83,12 +83,15 @@ class BilibiliTask:
             return False, "漫画签到异常"
 
     # ===========================
-    # ✅ 风纪委 —— 获取案件
+    # ✅ 风纪委完整版（可正常获取案件+投票）
     # ===========================
     def judgement_get_case(self):
+        headers = self.headers.copy()
+        headers["Origin"] = "https://www.bilibili.com"
+        headers["Referer"] = "https://www.bilibili.com/account/credit/jury"
         url = "https://api.bilibili.com/x/credit/v2/jury/case/next"
         try:
-            res = requests.get(url, headers=self.headers, timeout=10)
+            res = requests.get(url, headers=headers, timeout=10)
             data = res.json()
             if data.get("code") == 0:
                 return data["data"]
@@ -96,12 +99,12 @@ class BilibiliTask:
         except:
             return None
 
-    # ===========================
-    # ✅ 风纪委 —— 投票（弃权）
-    # ===========================
     def judgement_vote(self, case_id, vote=2):
         if not self.csrf:
             return False
+        headers = self.headers.copy()
+        headers["Origin"] = "https://www.bilibili.com"
+        headers["Referer"] = "https://www.bilibili.com/account/credit/jury"
         url = "https://api.bilibili.com/x/credit/v2/jury/vote"
         data = {
             "case_id": case_id,
@@ -109,15 +112,12 @@ class BilibiliTask:
             "csrf": self.csrf
         }
         try:
-            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            res = requests.post(url, headers=headers, data=data, timeout=8)
             data = res.json()
             return data.get("code") == 0
         except:
             return False
 
-    # ===========================
-    # ✅ 风纪委每日任务（自动投3票）
-    # ===========================
     def judgement_daily(self):
         count = 0
         max_vote = 3
@@ -126,12 +126,12 @@ class BilibiliTask:
             if not case:
                 break
             case_id = case.get("case_id")
-            if self.judgement_vote(case_id, vote=2):
+            if self.judgement_vote(case_id, 2):
                 count += 1
         if count > 0:
             return True, f"风纪委完成 {count}/3 票"
         else:
-            return True, "风纪委：今日已完成或无案件"
+            return True, "风纪委：今日已完成/无案件"
 
     # ===========================
     # 视频相关
