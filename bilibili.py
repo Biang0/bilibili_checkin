@@ -33,42 +33,50 @@ class BilibiliTask:
             logger.error(f"请求用户信息API异常: {e}")
             return None
 
-    # ===========================
-    # ✅ 修复：直播签到（旧仓库可用接口）
-    # ===========================
-    def live_sign(self):
-        url = "https://api.live.bilibili.com/sign/doSign"
+    def get_task_info(self):
         try:
-            res = requests.get(url, headers=self.headers, timeout=10)
+            url = "https://api.bilibili.com/x/member/web/exp/log"
+            resp = requests.get(url, headers=self.headers, timeout=8)
+            data = resp.json()
+            if data.get("code") != 0:
+                return {"coin_exp": 0}
+
+            coin_exp = 0
+            for item in data.get("data", {}).get("list", []):
+                if "投币" in item.get("reason", ""):
+                    coin_exp += item.get("delta", 0)
+            return {"coin_exp": coin_exp}
+        except:
+            return {"coin_exp": 0}
+
+    def live_sign(self):
+        try:
+            url = "https://api.live.bilibili.com/sign/doSign"
+            res = requests.get(url, headers=self.headers, timeout=8)
             data = res.json()
             if data['code'] == 0:
                 return True, "直播签到成功"
             elif data['code'] == 101104:
-                return True, "今日直播已签到"
+                return True, "今日已签到"
             else:
-                return False, data.get('message', '直播签到失败')
-        except Exception as e:
-            return False, str(e)
+                return False, "直播签到已下线"
+        except:
+            return False, "直播签到异常"
 
-    # ===========================
-    # ✅ 修复：漫画签到（旧仓库原版接口）
-    # ===========================
     def manga_sign(self):
-        headers = self.headers.copy()
-        headers["Referer"] = "https://manga.bilibili.com/"
-        url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
-        data = {"platform": "android"}
         try:
-            res = requests.post(url, headers=headers, data=data, timeout=10)
+            headers = self.headers.copy()
+            headers['Referer'] = 'https://manga.bilibili.com/'
+            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
+            data = {"platform": "android"}
+            res = requests.post(url, headers=headers, data=data, timeout=8)
             data = res.json()
-            if data["code"] == 0:
+            if data.get("code") == 0:
                 return True, "漫画签到成功"
-            elif "clockIn" in str(data):
-                return True, "今日漫画已签到"
             else:
-                return False, "漫画签到失败"
-        except Exception as e:
-            return False, str(e)
+                return False, "漫画签到无效"
+        except:
+            return False, "漫画签到异常"
 
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
@@ -109,7 +117,8 @@ class BilibiliTask:
             return False
 
     def add_coin(self, bvid, num=1, select_like=1):
-        if not self.csrf: return False, "Bili_jct(csrf) 未找到"
+        if not self.csrf:
+            return False, "csrf 缺失"
         url = 'https://api.bilibili.com/x/web-interface/coin/add'
         data = {'bvid': bvid, 'multiply': num, 'select_like': select_like, 'csrf': self.csrf}
         try:
@@ -120,9 +129,10 @@ class BilibiliTask:
             return False, data.get('message', '投币失败')
         except Exception as e:
             return False, str(e)
-            
+
     def share_video(self, bvid):
-        if not self.csrf: return False, "Bili_jct(csrf) 未找到"
+        if not self.csrf:
+            return False, "csrf 缺失"
         url = 'https://api.bilibili.com/x/web-interface/share/add'
         data = {'bvid': bvid, 'csrf': self.csrf}
         try:
