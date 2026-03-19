@@ -1,18 +1,18 @@
 # ==============================================
 #  B站每日自动签到 + 自动清日志 + 15天保活
 #  时间：每天 凌晨 01:00（北京时间）
+#  支持：PushPlus + Telegram 双推送
 # ==============================================
 name: Bilibili每日签到+清日志+15天保活
 
 on:
   schedule:
-    - cron: '0 17 * * *'         # 每天凌晨1点签到
-    - cron: '0 17 */15 * *'      # 每15天 执行一次保活
-  workflow_dispatch:             # 手动触发
+    - cron: '0 17 * * *'         # 每天凌晨1点执行签到
+  workflow_dispatch:             # 手动触发（点击即运行+保活）
 
 jobs:
   # ==============================================
-  #  任务1：B站自动签到
+  #  任务1：B站自动签到 + 双推送
   # ==============================================
   bilibili-task:
     runs-on: ubuntu-22.04
@@ -35,18 +35,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests loguru
 
-      - name: 执行B站签到任务
+      - name: 执行B站签到任务（PushPlus+TG双推送）
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
           PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
-          TASK_CONFIG: ${{ secrets.TASK_CONFIG }}
           COIN_ADD_NUM: ${{ secrets.COIN_ADD_NUM }}
           COIN_SELECT_LIKE: ${{ secrets.COIN_SELECT_LIKE }}
-          COIN_VIDEO_SOURCE: ${{ secrets.COIN_VIDEO_SOURCE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python main.py
 
   # ==============================================
-  #  任务2：每次运行后清理日志（已修复）
+  #  任务2：自动清理所有运行日志
   # ==============================================
   clean-logs:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
     needs: bilibili-task
 
     steps:
-      - name: 清理所有旧日志
+      - name: 清理旧运行记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -65,22 +65,23 @@ jobs:
           keep_minimum_runs: 1
 
   # ==============================================
-  #  任务3：每15天自动保活（无任何语法函数，绝对不报错）
+  #  任务3：15天保活（手动触发+自动周期双支持）
   # ==============================================
   keepalive:
     runs-on: ubuntu-latest
     needs: clean-logs
-    # 只有在【每15天那个定时任务】才执行
-    if: github.event.schedule == '0 17 */15 * *'
+    # 手动运行 或 每运行15次自动保活
+    if: github.event_name == 'workflow_dispatch' || github.run_number % 15 == 0
 
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 15天自动保活
+      - name: 自动保活提交
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git commit --allow-empty -m "15天自动保活 - 防止GitHub禁用"
-          git push origin ${{ github.ref }}
+          git commit --allow-empty -m "🔄 15天自动保活 - 维持仓库活跃"
+          git push
