@@ -25,34 +25,28 @@ def mask_uid(uid: str) -> str:
     uid_str = str(uid)
     if len(uid_str) <= 2:
         return uid_str[0] + '*'
-    return uid_str[:2] + '*' * (len(s) - 2)
+    return uid_str[:2] + '*' * (len(uid_str) - 2)
 
-# ========================== ✅ 真正修复版 ==========================
 def execute_coin_task(bili, user_info, config):
     try:
-        # 你现有接口：获取今日已投币数量
         coin_info = bili.get_coin_info()
         today_coin = coin_info.get("today_coin", 0)
     except:
         today_coin = 0
 
-    # 已投满 5 → 跳过
     if today_coin >= 5:
         return True, f"今日已投满 {today_coin}/5，跳过"
 
-    # 计算需要投多少
     max_coin = int(config.get('COIN_ADD_NUM'))
     need_coin = min(max_coin, 5 - today_coin)
 
     if need_coin <= 0:
         return True, f"今日已投 {today_coin}，无需再投"
 
-    # 余额不足
     balance = user_info.get("money", 0)
     if balance < 1:
         return True, f"硬币不足({balance})，跳过"
 
-    # 获取视频
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
         video_list = bili.get_ranking_videos()
     else:
@@ -61,7 +55,6 @@ def execute_coin_task(bili, user_info, config):
     if not video_list:
         return False, "获取视频失败"
 
-    # 执行投币
     added = 0
     for bvid in video_list:
         if added >= need_coin:
@@ -75,7 +68,6 @@ def execute_coin_task(bili, user_info, config):
 
     return True, f"✅ 今日已投：{today_coin + added}/5，本次投：{added}"
 
-# ========================== 以下不变 ==========================
 def run_all_tasks_for_account(bili, config):
     tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
     if not tasks_to_run:
@@ -119,7 +111,7 @@ def main():
         logger.error('环境变量 BILIBILI_COOKIE 未设置，程序终止')
         sys.exit(1)
 
-    cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if task.strip()]
+    cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if c.strip()]
     logger.info(f"检测到 {len(cookies)} 个账号，开始执行任务...")
     
     all_results = []
@@ -140,7 +132,7 @@ def main():
             if "push" in task_name or "推送" in task_name:
                 continue
             level = logger.info if success else logger.error
-            masked_account_name = mask_string(final_user_info.get('uname')) if final_user_info else f'账号{i}'
+            masked_account_name = mask_string(final_user_info.get('uname')) if final_user_info else f"账号{i}"
             if msg and any(k in msg for k in IGNORE_FAIL_KEYWORDS):
                 level(f"[账号{i}] {task_name}: 跳过，原因: {msg}")
                 continue
