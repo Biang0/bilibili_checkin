@@ -49,34 +49,40 @@ class BilibiliTask:
         except:
             return {"coin_exp": 0}
 
+    # =======================
+    # ✅ 直播签到（已修复）
+    # =======================
     def live_sign(self):
         try:
-            url = "https://api.live.bilibili.com/sign/doSign"
+            url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/WebSign"
             res = requests.get(url, headers=self.headers, timeout=8)
             data = res.json()
             if data['code'] == 0:
                 return True, "直播签到成功"
-            elif data['code'] == 101104:
-                return True, "今日已签到"
+            elif data['code'] == 600001:
+                return True, "今日已直播签到"
             else:
-                return False, "直播签到已下线"
-        except:
-            return False, "直播签到异常"
+                return False, data.get('message', '直播签到失败')
+        except Exception as e:
+            return False, str(e)
 
+    # =======================
+    # ✅ 漫画签到（已修复）
+    # =======================
     def manga_sign(self):
         try:
             headers = self.headers.copy()
             headers['Referer'] = 'https://manga.bilibili.com/'
             url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
-            data = {"platform": "android"}
+            data = {"platform": "ios"}
             res = requests.post(url, headers=headers, data=data, timeout=8)
             data = res.json()
-            if data.get("code") == 0:
+            if "code" in data and data["code"] == 0:
                 return True, "漫画签到成功"
             else:
-                return False, "漫画签到无效"
-        except:
-            return False, "漫画签到异常"
+                return False, "今日已漫画签到或签到失效"
+        except Exception as e:
+            return False, str(e)
 
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
