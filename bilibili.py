@@ -1,5 +1,6 @@
 import requests
 from loguru import logger
+import time
 
 class BilibiliTask:
     def __init__(self, cookie):
@@ -33,26 +34,41 @@ class BilibiliTask:
             return None
 
     # ===========================
-    # ✅【你缺失的核心方法】获取今日任务经验（判断投币用）
+    # ✅ 修复：直播签到（旧仓库可用接口）
     # ===========================
-    def get_task_info(self):
-        url = "https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp"
+    def live_sign(self):
+        url = "https://api.live.bilibili.com/sign/doSign"
         try:
-            resp = requests.get(url, headers=self.headers, timeout=10)
-            data = resp.json()
-            if data.get("code") != 0:
-                return {"coin_exp": 0}
-            
-            coin_exp = 0
-            for item in data.get("data", {}).get("list", []):
-                reason = item.get("reason", "")
-                exp = item.get("delta", 0)
-                if "投币" in reason:
-                    coin_exp += exp
-            return {"coin_exp": coin_exp}
+            res = requests.get(url, headers=self.headers, timeout=10)
+            data = res.json()
+            if data['code'] == 0:
+                return True, "直播签到成功"
+            elif data['code'] == 101104:
+                return True, "今日直播已签到"
+            else:
+                return False, data.get('message', '直播签到失败')
         except Exception as e:
-            logger.error(f"获取任务经验失败: {e}")
-            return {"coin_exp": 0}
+            return False, str(e)
+
+    # ===========================
+    # ✅ 修复：漫画签到（旧仓库原版接口）
+    # ===========================
+    def manga_sign(self):
+        headers = self.headers.copy()
+        headers["Referer"] = "https://manga.bilibili.com/"
+        url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
+        data = {"platform": "android"}
+        try:
+            res = requests.post(url, headers=headers, data=data, timeout=10)
+            data = res.json()
+            if data["code"] == 0:
+                return True, "漫画签到成功"
+            elif "clockIn" in str(data):
+                return True, "今日漫画已签到"
+            else:
+                return False, "漫画签到失败"
+        except Exception as e:
+            return False, str(e)
 
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
@@ -127,27 +143,5 @@ class BilibiliTask:
             if data['code'] == 0:
                 return True, "观看成功"
             return False, data.get('message', '观看失败')
-        except Exception as e:
-            return False, str(e)
-            
-    def live_sign(self):
-        url = 'https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign'
-        try:
-            res = requests.get(url, headers=self.headers)
-            data = res.json()
-            if data['code'] == 0:
-                return True, data.get('data', {}).get('text', '直播签到成功')
-            return False, data.get('message', '直播签到失败')
-        except Exception as e:
-            return False, str(e)
-
-    def manga_sign(self):
-        url = 'https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn'
-        try:
-            res = requests.post(url, headers=self.headers, data={'platform': 'ios'})
-            data = res.json()
-            if data['code'] == 0:
-                return True, "漫画签到成功"
-            return False, data.get('message', '漫画签到失败')
         except Exception as e:
             return False, str(e)
