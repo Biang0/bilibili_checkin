@@ -46,7 +46,7 @@ jobs:
         run: python main.py
 
   # ==============================================
-  #  任务2：每次运行后清理日志
+  #  任务2：每次运行后清理日志（已修复）
   # ==============================================
   clean-logs:
     runs-on: ubuntu-latest
@@ -55,14 +55,14 @@ jobs:
     needs: bilibili-task
 
     steps:
-      - name: 清理旧日志
-        uses: GitRML/delete-workflow-runs@main
+      - name: 清理所有旧日志
+        uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: '*'
           retain_days: 0
           keep_minimum_runs: 1
-          delete_workflow_pattern: '*'
-          delete_consecutive_pages: 20
 
   # ==============================================
   #  任务3：每15天自动保活（无任何语法函数，绝对不报错）
