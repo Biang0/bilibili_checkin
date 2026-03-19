@@ -28,34 +28,30 @@ def mask_uid(uid: str) -> str:
     return uid_str[:2] + '*' * 5
 
 # ===========================
-# ✅ 精准判断：经验 → 投币数量（旧仓库原版逻辑）
+# ✅ 精准判断：经验 → 投币数量（已修复变量）
 # ===========================
 def execute_coin_task(bili, user_info, config):
-    # ————【核心判断】————
+    coin_exp = 0  # 提前定义，防止异常时报错
     try:
         task_info = bili.get_task_info()
         coin_exp = task_info.get("coin_exp", 0)
-        today_coin = coin_exp // 10   # 旧仓库算法：经验÷10=投币数
+        today_coin = coin_exp // 10
     except:
         today_coin = 0
 
-    # 投满5个（50经验）直接跳过
     if today_coin >= 5:
         return True, f"判断结果：今日已投{today_coin}/5 → 跳过"
 
-    # 计算需要补投多少
     max_coin = int(config.get('COIN_ADD_NUM', 5))
     need_coin = min(max_coin, 5 - today_coin)
 
     if need_coin <= 0:
         return True, f"判断结果：无需投币"
 
-    # 余额判断
     balance = user_info.get("money", 0)
     if balance < need_coin:
         return True, f"判断结果：硬币不足{need_coin}个"
 
-    # 获取视频
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
         video_list = bili.get_ranking_videos()
     else:
@@ -64,7 +60,6 @@ def execute_coin_task(bili, user_info, config):
     if not video_list:
         return False, "获取视频失败"
 
-    # 执行投币
     added = 0
     for bvid in video_list:
         if added >= need_coin:
