@@ -3,8 +3,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from bilibili import BilibiliTask
-# 导入推送模块
-from push import format_push_message, send_to_pushplus, send_to_telegram
 
 class BeijingFormatter:
     @staticmethod
@@ -77,40 +75,24 @@ def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
         "COIN_ADD_NUM": 5,
-        "COIN_SELECT_LIKE": 1,
-        # 推送配置
-        "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN"),
-        "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN"),
-        "TG_CHAT_ID": os.environ.get("TG_CHAT_ID")
+        "COIN_SELECT_LIKE": 1
     }
 
     if not config["BILIBILI_COOKIE"]:
         logger.error("未配置 BILIBILI_COOKIE")
         sys.exit(1)
 
-    all_results = []
     cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if c.strip()]
-    
     for idx, cookie in enumerate(cookies, 1):
         logger.info(f"=== 账号{idx} 任务开始 ===")
         bili = BilibiliTask(cookie)
         tasks_result, user_info = run_all_tasks_for_account(bili, config)
-        
-        # 收集结果用于推送
-        all_results.append({
-            "account_index": idx,
-            "tasks": tasks_result,
-            "user_info": user_info
-        })
-        
         for task_name, (success, msg) in tasks_result.items():
             logger.info(f"[账号{idx}] {task_name}: {'成功' if success else '失败'} | {msg}")
         logger.info("=== 任务完成 ===\n")
 
-    # 生成并发送推送报告
-    push_content = format_push_message(all_results)
-    send_to_pushplus(config["PUSH_PLUS_TOKEN"], "Bilibili 每日签到", push_content)
-    send_to_telegram(config["TG_BOT_TOKEN"], config["TG_CHAT_ID"], push_content)
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
