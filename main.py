@@ -32,11 +32,24 @@ def execute_coin_task(bili, user_info, config):
     if coins_to_add <= 0:
         return True, "配置为0，跳过"
     
+    # ==========================
+    # 修复：先获取今日已投币
+    # ==========================
+    coin_info = bili.get_coin_info()
+    if not coin_info:
+        return False, "获取投币信息失败"
+    today_coin = coin_info.get("today_coin", 0)
+    
+    if today_coin >= 5:
+        return True, f"今日已投{today_coin}枚，达上限，跳过"
+    
+    need_add = min(coins_to_add, 5 - today_coin)
+    if need_add <= 0:
+        return True, f"今日已投够，跳过"
+
     coin_balance = user_info.get('money', 0)
     if coin_balance < 1:
         return True, f"硬币不足({coin_balance})，跳过"
-    
-    coins_to_add = min(coins_to_add, int(coin_balance), 5)
 
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
         video_list = bili.get_ranking_videos()
@@ -50,7 +63,7 @@ def execute_coin_task(bili, user_info, config):
 
     added_coins = 0
     for bvid in video_list:
-        if added_coins >= coins_to_add:
+        if added_coins >= need_add:
             break
         
         success, msg = bili.add_coin(bvid, 1, int(config.get('COIN_SELECT_LIKE')))
@@ -59,14 +72,13 @@ def execute_coin_task(bili, user_info, config):
             logger.info(f"为视频 {bvid} 投币成功。")
         elif "已达到" in msg:
             logger.warning("今日投币上限已满，终止投币。")
-            added_coins = config.get('COIN_ADD_NUM')
             break
         else:
             logger.warning(f"为视频 {bvid} 投币失败: {msg}")
             if "硬币不足" in msg:
                 break
 
-    return True, f"尝试投币，最终成功 {added_coins} 枚"
+    return True, f"今日投币 {added_coins} 枚（累计{today_coin + added_coins}/5）"
 
 def run_all_tasks_for_account(bili, config):
     tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
@@ -98,9 +110,6 @@ def run_all_tasks_for_account(bili, config):
     return tasks_result, user_info
 
 def main():
-    # ==================== 【核心修改点在这里】 ====================
-    # 我们先用 .get() 获取值，如果值是空字符串，就用 or 操作符来选择默认值。
-    # 这样既能处理"变量不存在"的情况，也能处理"变量存在但为空"的情况。
     config = {
         "BILIBILI_COOKIE": os.environ.get('BILIBILI_COOKIE'),
         "PUSH_PLUS_TOKEN": os.environ.get('PUSH_PLUS_TOKEN'),
@@ -109,7 +118,6 @@ def main():
         "COIN_SELECT_LIKE": os.environ.get('COIN_SELECT_LIKE') or '1',
         "COIN_VIDEO_SOURCE": os.environ.get('COIN_VIDEO_SOURCE') or 'dynamic'
     }
-    # ============================================================
     
     if not config["BILIBILI_COOKIE"]:
         logger.error('环境变量 BILIBILI_COOKIE 未设置，程序终止')
@@ -119,7 +127,7 @@ def main():
     logger.info(f"检测到 {len(cookies)} 个账号，开始执行任务...")
     
     all_results = []
-    any_failed = False  # 全局失败标志
+    any_failed = False
     for i, cookie in enumerate(cookies, 1):
         masked_account_name = None
         logger.info(f"=== 账号{i} 任务完成情况 ===")
@@ -128,12 +136,10 @@ def main():
         final_user_info = bili.get_user_info() if user_info else None
         all_results.append({'account_index': i, 'tasks': tasks_result, 'user_info': final_user_info})
 
-        # 账号任务成功标志
         account_failed = False
         valid_task_count = 0
         valid_success_count = 0
 
-        # 任务日志输出
         for task_name, (success, msg) in tasks_result.items():
             if "push" in task_name or "推送" in task_name:
                 continue
@@ -141,8 +147,7 @@ def main():
             masked_account_name = mask_string(final_user_info.get('uname')) if final_user_info else f'账号{i}'
             if msg and any(k in msg for k in IGNORE_FAIL_KEYWORDS):
                 level(f"[账号{i}] {task_name}: 跳过，原因: {msg}")
-                continue  # 跳过统计
-            # 统计有效任务
+                continue
             valid_task_count += 1
             if success:
                 valid_success_count += 1
@@ -150,11 +155,9 @@ def main():
             else:
                 level(f"[账号{i}] {task_name}: 失败，原因: {msg}")
 
-        # 判断账号是否失败
         if not user_info or valid_task_count == 0 or valid_success_count == 0:
             account_failed = True
 
-        # 用户信息分段输出
         logger.info(f"=== 账号{i} 用户信息 ===")
         if final_user_info:
             logger.info(f"用户名: {mask_string(final_user_info.get('uname'))}")
@@ -178,7 +181,6 @@ def main():
     else:
         logger.info('未配置 PUSH_PLUS_TOKEN，跳过推送。')
 
-    # 所有账号执行完毕，统一输出最终执行结果
     if any_failed:
         logger.error("有账号任务执行失败，整个任务失败！")
         sys.exit(1)
@@ -186,7 +188,7 @@ def main():
         logger.info("所有账号任务全部成功！")
         sys.exit(0)
 
-IGNORE_FAIL_KEYWORDS = ["未配置", "跳过", "已下线"]
+IGNORE_FAIL_KEYWORDS = ["未配置", "跳过", "已下线", "达上限"]
 
 if __name__ == '__main__':
     main()
