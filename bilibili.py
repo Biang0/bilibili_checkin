@@ -29,9 +29,7 @@ class BilibiliTask:
             return None
         return None
 
-    # ===========================
-    # 投币经验真实判断
-    # ===========================
+    # 真实投币经验判断
     def get_task_info(self):
         try:
             res = requests.get("https://api.bilibili.com/x/member/web/exp/log", headers=self.headers, timeout=8)
@@ -46,9 +44,7 @@ class BilibiliTask:
         except:
             return {"coin_exp": 0}
 
-    # ===========================
     # 直播签到
-    # ===========================
     def live_sign(self):
         url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign"
         try:
@@ -63,9 +59,7 @@ class BilibiliTask:
         except Exception as e:
             return False, str(e)
 
-    # ===========================
     # 漫画签到
-    # ===========================
     def manga_sign(self):
         try:
             headers = self.headers.copy()
@@ -80,59 +74,7 @@ class BilibiliTask:
         except:
             return False, "漫画签到异常"
 
-    # ===========================
-    # ✅ 新版风纪委（对应：https://www.bilibili.com/judgement/index）
-    # ===========================
-    def judgement_get_case(self):
-        headers = self.headers.copy()
-        headers["Referer"] = "https://www.bilibili.com/judgement/index"
-        url = "https://api.bilibili.com/x/credit/jury/vote/case"
-        try:
-            res = requests.get(url, headers=headers, timeout=10)
-            data = res.json()
-            if data.get("code") == 0:
-                return data.get("data")
-        except:
-            pass
-        return None
-
-    def judgement_vote(self, case_id, vote=2):
-        if not self.csrf or not case_id:
-            return False
-        headers = self.headers.copy()
-        headers["Referer"] = "https://www.bilibili.com/judgement/index"
-        url = "https://api.bilibili.com/x/credit/jury/vote/commit"
-        data = {
-            "case_id": case_id,
-            "vote": vote,
-            "csrf": self.csrf
-        }
-        try:
-            res = requests.post(url, data=data, headers=headers, timeout=8)
-            return res.json().get("code") == 0
-        except:
-            return False
-
-    def judgement_daily(self):
-        count = 0
-        max_vote = 3
-        for _ in range(6):
-            if count >= max_vote:
-                break
-            case = self.judgement_get_case()
-            if not case:
-                continue
-            case_id = case.get("case_id")
-            if self.judgement_vote(case_id, 2):
-                count += 1
-        if count > 0:
-            return True, f"风纪委完成 {count}/3 票"
-        else:
-            return True, "风纪委：今日已完成或无案件"
-
-    # ===========================
     # 视频功能
-    # ===========================
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
         try:
@@ -141,15 +83,6 @@ class BilibiliTask:
             return [video['bvid'] for video in data.get('data', {}).get('archives', [])]
         except:
             return []
-
-    def check_video_coin_status(self, bvid):
-        try:
-            url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'
-            res = requests.get(url, headers=self.headers)
-            data = res.json()
-            return data['data']['multiply'] > 0
-        except:
-            return False
 
     def add_coin(self, bvid, num=1, select_like=1):
         if not self.csrf:
