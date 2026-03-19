@@ -27,6 +27,9 @@ def format_push_message(all_results):
     
     return "\n".join(content)
 
+# ===========================
+# 你原版的 PushPlus 推送（保留不动）
+# ===========================
 def send_to_pushplus(token, title, content):
     url = "http://www.pushplus.plus/send"
     data = {"token": token, "title": title, "content": content, "template": "markdown"}
@@ -38,3 +41,30 @@ def send_to_pushplus(token, title, content):
             logger.error(f'PushPlus 推送失败: {res.json().get("msg", "未知错误")}')
     except Exception as e:
         logger.error(f'PushPlus 推送异常: {e}')
+
+# ===========================
+# 新增 Telegram(TG) 推送
+# ===========================
+def send_to_telegram(bot_token, chat_id, content):
+    if not bot_token or not chat_id:
+        logger.warning("TG 未配置，跳过推送")
+        return
+    
+    # TG 支持 Markdown 格式，和 PushPlus 通用
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": content,
+        "parse_mode": "Markdown",  # 格式匹配
+        "disable_web_page_preview": True
+    }
+    
+    try:
+        response = requests.post(url, data=data, timeout=15)
+        result = response.json()
+        if result.get("ok"):
+            logger.info("Telegram 推送成功！")
+        else:
+            logger.error(f"Telegram 推送失败: {result.get('description')}")
+    except Exception as e:
+        logger.error(f"Telegram 推送异常: {e}")
