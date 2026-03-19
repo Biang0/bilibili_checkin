@@ -73,47 +73,80 @@ def run_all_tasks_for_account(bili, config):
     return tasks_result, user_info
 
 # ==============================
-# 推送工具函数
+# 统一美化推送格式（两边完全一样）
 # ==============================
-def send_pushplus(token, title, msg):
+def format_push_message(all_results):
+    content = ["### Bilibili 任务报告\n"]
+    
+    for result in all_results:
+        user_info = result.get('user_info')
+        if user_info:
+            account_name = user_info['uname']
+            content.append(f"--- \n#### 账号: {account_name} (Lv.{user_info['level_info']['current_level']})")
+        else:
+            account_name = f"账号 {result['account_index']}"
+            content.append(f"--- \n#### {account_name}")
+
+        for name, (success, message) in result['tasks'].items():
+            status_icon = "✅" if success else "❌"
+            reason = f" - {message}" if message else ""
+            content.append(f"- **{name}**: {status_icon}{reason}")
+            
+        if user_info:
+            content.append(f"- **硬币余额**: {user_info['money']}")
+    
+    beijing_time = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+    content.append(f"\n> 报告时间: {beijing_time}")
+    
+    return "\n".join(content)
+
+# ==============================
+# PushPlus 推送
+# ==============================
+def send_to_pushplus(token, title, content):
     if not token:
         logger.warning("未配置 PushPlus，跳过推送")
         return
+    url = "http://www.pushplus.plus/send"
+    data = {"token": token, "title": title, "content": content, "template": "markdown"}
     try:
-        url = "http://www.pushplus.plus/send"
-        data = {
-            "token": token,
-            "title": title,
-            "content": msg.replace("\n", "<br>"),
-            "template": "markdown"
-        }
         res = requests.post(url, json=data, timeout=10)
-        if res.json().get("code") == 200:
-            logger.info("✅ PushPlus 推送成功")
+        if res.json().get('code') == 200:
+            logger.info('✅ PushPlus 推送成功！')
         else:
-            logger.error(f"❌ PushPlus 推送失败：{res.json().get('msg')}")
+            logger.error(f'❌ PushPlus 推送失败: {res.json().get("msg", "未知错误")}')
     except Exception as e:
-        logger.error(f"PushPlus 异常：{e}")
+        logger.error(f'PushPlus 推送异常: {e}')
 
-def send_telegram(bot_token, chat_id, msg):
+# ==============================
+# Telegram 推送
+# ==============================
+def send_to_telegram(bot_token, chat_id, content):
     if not bot_token or not chat_id:
-        logger.warning("未配置 Telegram，跳过推送")
+        logger.warning("TG 未配置，跳过推送")
         return
+    
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": content,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True
+    }
+    
     try:
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        data = {
-            "chat_id": chat_id,
-            "text": msg,
-            "parse_mode": "Markdown"
-        }
-        res = requests.post(url, data=data, timeout=10)
-        if res.json().get("ok"):
-            logger.info("✅ Telegram 推送成功")
+        response = requests.post(url, data=data, timeout=10)
+        result = response.json()
+        if result.get("ok"):
+            logger.info("✅ Telegram 推送成功！")
         else:
-            logger.error(f"❌ TG 推送失败：{res.json().get('description')}")
+            logger.error(f"❌ Telegram 推送失败: {result.get('description')}")
     except Exception as e:
-        logger.error(f"TG 异常：{e}")
+        logger.error(f"Telegram 推送异常: {e}")
 
+# ==============================
+# 主函数（已统一推送）
+# ==============================
 def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
@@ -129,24 +162,30 @@ def main():
         sys.exit(1)
 
     cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split("###") if c.strip()]
-    final_msg = "📊 B站每日签到报告\n\n"
+    all_results = []
 
     for idx, cookie in enumerate(cookies, 1):
         logger.info(f"=== 账号{idx} 任务开始 ===")
         bili = BilibiliTask(cookie)
         tasks, user = run_all_tasks_for_account(bili, config)
 
-        final_msg += f"===== 账号{idx} =====\n"
+        all_results.append({
+            'account_index': idx,
+            'user_info': user,
+            'tasks': tasks
+        })
+
         for name, (ok, info) in tasks.items():
-            icon = "✅" if ok else "❌"
-            final_msg += f"{name}：{icon} {info}\n"
             logger.info(f"[账号{idx}] {name}：{'成功' if ok else '失败'} | {info}")
 
         logger.info("=== 任务完成 ===\n")
 
-    # 双推送
-    send_pushplus(config["PUSH_PLUS_TOKEN"], "B站签到报告", final_msg)
-    send_telegram(config["TG_BOT_TOKEN"], config["TG_CHAT_ID"], final_msg)
+    # 生成统一的漂亮报告
+    final_msg = format_push_message(all_results)
+
+    # 两个推送内容完全一样
+    send_to_pushplus(config["PUSH_PLUS_TOKEN"], "Bilibili 任务报告", final_msg)
+    send_to_telegram(config["TG_BOT_TOKEN"], config["TG_CHAT_ID"], final_msg)
 
 if __name__ == "__main__":
     main()
