@@ -28,10 +28,10 @@ def mask_uid(uid: str) -> str:
     return uid_str[:2] + '*' * 5
 
 # ===========================
-# ✅ 精准判断：经验 → 投币数量（已修复变量）
+# 投币任务（真实判断，不乱投）
 # ===========================
 def execute_coin_task(bili, user_info, config):
-    coin_exp = 0  # 提前定义，防止异常时报错
+    coin_exp = 0
     try:
         task_info = bili.get_task_info()
         coin_exp = task_info.get("coin_exp", 0)
@@ -74,10 +74,9 @@ def execute_coin_task(bili, user_info, config):
     return True, f"判断完成 ✅ 经验{coin_exp} → 已投{today_coin+added}/5"
 
 # ===========================
-# 主任务流程
+# 主任务（含风纪委）
 # ===========================
 def run_all_tasks_for_account(bili, config):
-    tasks_to_run = ['live_sign','manga_sign','share_video','add_coin']
     user_info = bili.get_user_info()
     if not user_info:
         return {'登录检查': (False, 'Cookie失效')}, None
@@ -92,6 +91,8 @@ def run_all_tasks_for_account(bili, config):
     tasks_result['漫画签到'] = bili.manga_sign()
     tasks_result['投币任务'] = execute_coin_task(bili, user_info, config)
     tasks_result['观看视频'] = bili.watch_video(bvid)
+    tasks_result['风纪委每日'] = bili.judgement_daily()
+    
     return tasks_result, user_info
 
 def main():
