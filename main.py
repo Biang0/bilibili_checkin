@@ -28,63 +28,59 @@ def mask_uid(uid: str) -> str:
     return uid_str[:2] + '*' * (len(uid_str) - 2)
 
 # ==========================================
-# 【智能投币核心】自动判断今日已投 + 自动补投
+# 【旧仓库官方逻辑】智能判断投币数量
 # ==========================================
 def execute_coin_task(bili, user_info, config):
-    # 你希望每天最多投几个（可在环境变量修改）
-    max_daily_coin = int(config.get('COIN_ADD_NUM'))
-    if max_daily_coin <= 0:
-        return True, "投币已关闭，跳过"
-
-    # 1. 获取今日已投币数量
+    # 旧仓库逻辑：获取任务经验 → 计算已投币数
     try:
-        coin_info = bili.get_coin_info()
-        today_coin = coin_info.get("today_coin", 0)
+        task_info = bili.get_task_info()
+        coin_exp = task_info.get("coin_exp", 0)  # 投币获得的经验
+        today_coin = coin_exp // 10  # 1硬币=10经验 → 旧仓库核心算法
     except:
         today_coin = 0
 
-    # 2. 已达上限 → 直接跳过
+    # 已投满 5 个（50经验）→ 直接跳过
     if today_coin >= 5:
-        return True, f"今日已投{today_coin}/5，达上限，跳过"
+        return True, f"今日已投满 {today_coin}/5，自动跳过"
 
-    # 3. 计算今天还能投多少
-    need_coin = min(max_daily_coin, 5 - today_coin)
+    # 计算还需投多少
+    max_coin = int(config.get('COIN_ADD_NUM'))
+    need_coin = min(max_coin, 5 - today_coin)
 
     if need_coin <= 0:
-        return True, f"今日已投{today_coin}，无需再投"
+        return True, f"今日已投 {today_coin}，无需再投"
 
-    # 4. 检查硬币余额
-    coin_balance = user_info.get('money', 0)
-    if coin_balance < need_coin:
-        return True, f"硬币不足({coin_balance})，无法投{need_coin}枚"
+    # 检查硬币余额
+    balance = user_info.get("money", 0)
+    if balance < need_coin:
+        return True, f"硬币不足 {need_coin} 个，跳过"
 
-    # 5. 获取视频
+    # 获取视频
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
         video_list = bili.get_ranking_videos()
     else:
         video_list = bili.get_dynamic_videos()
 
     if not video_list:
-        return False, "无法获取视频列表"
+        return False, "获取视频失败"
 
-    # 6. 执行投币
-    added_coins = 0
+    # 执行投币
+    added = 0
     for bvid in video_list:
-        if added_coins >= need_coin:
+        if added >= need_coin:
             break
-
-        success, msg = bili.add_coin(bvid, 1, int(config.get('COIN_SELECT_LIKE')))
-        if success:
-            added_coins += 1
-            logger.info(f"投币成功 → {bvid}")
+        ok, msg = bili.add_coin(bvid, 1, int(config.get('COIN_SELECT_LIKE')))
+        if ok:
+            added += 1
+            logger.info(f"投币成功 {added}/{need_coin}")
         elif "已达到" in msg:
-            logger.warning("今日投币已满")
             break
-        else:
-            logger.warning(f"投币失败：{msg}")
 
-    return True, f"自动投币完成 ✅ 今日已投：{today_coin + added_coins}/{5}，本次投：{added_coins}"
+    return True, f"任务完成 ✅ 今日已投：{today_coin + added}/5，本次投：{added}"
 
+# ==========================================
+# 以下逻辑完全不变，保持你现有功能
+# ==========================================
 def run_all_tasks_for_account(bili, config):
     tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
     if not tasks_to_run:
@@ -119,7 +115,7 @@ def main():
         "BILIBILI_COOKIE": os.environ.get('BILIBILI_COOKIE'),
         "PUSH_PLUS_TOKEN": os.environ.get('PUSH_PLUS_TOKEN'),
         "TASK_CONFIG": os.environ.get('TASK_CONFIG') or 'live_sign,manga_sign,share_video,add_coin',
-        "COIN_ADD_NUM": os.environ.get('COIN_ADD_NUM') or '1',
+        "COIN_ADD_NUM": os.environ.get('COIN_ADD_NUM') or '5',
         "COIN_SELECT_LIKE": os.environ.get('COIN_SELECT_LIKE') or '1',
         "COIN_VIDEO_SOURCE": os.environ.get('COIN_VIDEO_SOURCE') or 'dynamic'
     }
