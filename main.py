@@ -27,26 +27,33 @@ def mask_uid(uid: str) -> str:
         return uid_str[0] + '*'
     return uid_str[:2] + '*' * (len(uid_str) - 2)
 
+# ========================== ✅ 旧仓库逻辑：纯经验判断 ==========================
 def execute_coin_task(bili, user_info, config):
+    # 旧仓库核心：获取任务经验
     try:
-        coin_info = bili.get_coin_info()
-        today_coin = coin_info.get("today_coin", 0)
+        task_info = bili.get_task_info()
+        coin_exp = task_info.get("coin_exp", 0)
+        today_coin = coin_exp // 10  # 1币=10经验
     except:
         today_coin = 0
 
+    # 投满5个直接跳过
     if today_coin >= 5:
         return True, f"今日已投满 {today_coin}/5，跳过"
 
+    # 计算需要投的数量
     max_coin = int(config.get('COIN_ADD_NUM'))
     need_coin = min(max_coin, 5 - today_coin)
 
     if need_coin <= 0:
         return True, f"今日已投 {today_coin}，无需再投"
 
+    # 余额判断
     balance = user_info.get("money", 0)
-    if balance < 1:
-        return True, f"硬币不足({balance})，跳过"
+    if balance < need_coin:
+        return True, f"硬币不足，跳过"
 
+    # 获取视频
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
         video_list = bili.get_ranking_videos()
     else:
@@ -55,6 +62,7 @@ def execute_coin_task(bili, user_info, config):
     if not video_list:
         return False, "获取视频失败"
 
+    # 投币
     added = 0
     for bvid in video_list:
         if added >= need_coin:
@@ -66,7 +74,9 @@ def execute_coin_task(bili, user_info, config):
         elif "已达到" in msg:
             break
 
-    return True, f"✅ 今日已投：{today_coin + added}/5，本次投：{added}"
+    return True, f"✅ 今日已投：{today_coin + added}/5 | 本次投：{added}"
+
+# ==========================================================================
 
 def run_all_tasks_for_account(bili, config):
     tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
