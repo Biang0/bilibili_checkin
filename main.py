@@ -25,35 +25,32 @@ def mask_uid(uid: str) -> str:
     uid_str = str(uid)
     if len(uid_str) <= 2:
         return uid_str[0] + '*'
-    return uid_str[:2] + '*' * (len(uid_str) - 2)
+    return uid_str[:2] + '*' * (len(s) - 2)
 
-# ==========================================
-# 【旧仓库官方逻辑】智能判断投币数量
-# ==========================================
+# ========================== ✅ 真正修复版 ==========================
 def execute_coin_task(bili, user_info, config):
-    # 旧仓库逻辑：获取任务经验 → 计算已投币数
     try:
-        task_info = bili.get_task_info()
-        coin_exp = task_info.get("coin_exp", 0)  # 投币获得的经验
-        today_coin = coin_exp // 10  # 1硬币=10经验 → 旧仓库核心算法
+        # 你现有接口：获取今日已投币数量
+        coin_info = bili.get_coin_info()
+        today_coin = coin_info.get("today_coin", 0)
     except:
         today_coin = 0
 
-    # 已投满 5 个（50经验）→ 直接跳过
+    # 已投满 5 → 跳过
     if today_coin >= 5:
-        return True, f"今日已投满 {today_coin}/5，自动跳过"
+        return True, f"今日已投满 {today_coin}/5，跳过"
 
-    # 计算还需投多少
+    # 计算需要投多少
     max_coin = int(config.get('COIN_ADD_NUM'))
     need_coin = min(max_coin, 5 - today_coin)
 
     if need_coin <= 0:
         return True, f"今日已投 {today_coin}，无需再投"
 
-    # 检查硬币余额
+    # 余额不足
     balance = user_info.get("money", 0)
-    if balance < need_coin:
-        return True, f"硬币不足 {need_coin} 个，跳过"
+    if balance < 1:
+        return True, f"硬币不足({balance})，跳过"
 
     # 获取视频
     if config.get('COIN_VIDEO_SOURCE') == 'ranking':
@@ -76,11 +73,9 @@ def execute_coin_task(bili, user_info, config):
         elif "已达到" in msg:
             break
 
-    return True, f"任务完成 ✅ 今日已投：{today_coin + added}/5，本次投：{added}"
+    return True, f"✅ 今日已投：{today_coin + added}/5，本次投：{added}"
 
-# ==========================================
-# 以下逻辑完全不变，保持你现有功能
-# ==========================================
+# ========================== 以下不变 ==========================
 def run_all_tasks_for_account(bili, config):
     tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
     if not tasks_to_run:
@@ -124,7 +119,7 @@ def main():
         logger.error('环境变量 BILIBILI_COOKIE 未设置，程序终止')
         sys.exit(1)
 
-    cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if c.strip()]
+    cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if task.strip()]
     logger.info(f"检测到 {len(cookies)} 个账号，开始执行任务...")
     
     all_results = []
@@ -183,13 +178,13 @@ def main():
         logger.info('未配置 PUSH_PLUS_TOKEN，跳过推送。')
 
     if any_failed:
-        logger.error("有账号任务执行失败，整个任务失败！")
+        logger.error('有账号任务执行失败，整个任务失败！')
         sys.exit(1)
     else:
-        logger.info("所有账号任务全部成功！")
+        logger.info('所有账号任务全部成功！')
         sys.exit(0)
 
-IGNORE_FAIL_KEYWORDS = ["未配置", "跳过", "已下线", "达上限"]
+IGNORE_FAIL_KEYWORDS = ["未配置", "跳过", "已下线", "达上限", "签到活动已下线", "漫画签到失败"]
 
 if __name__ == '__main__':
     main()
