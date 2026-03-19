@@ -65,13 +65,12 @@ jobs:
           keep_minimum_runs: 1
 
   # ==============================================
-  #  任务3：15天保活（手动触发+自动周期双支持）
+  #  任务3：15天保活（只在手动触发时运行，最稳定）
   # ==============================================
   keepalive:
     runs-on: ubuntu-latest
     needs: clean-logs
-    # 手动运行 或 每运行15次自动保活
-    if: github.event_name == 'workflow_dispatch' || github.run_number % 15 == 0
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - name: 拉取代码
