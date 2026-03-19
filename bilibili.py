@@ -32,8 +32,28 @@ class BilibiliTask:
             logger.error(f"请求用户信息API异常: {e}")
             return None
 
+    # ===========================
+    # ✅【你缺失的核心方法】获取今日任务经验（判断投币用）
+    # ===========================
+    def get_task_info(self):
+        url = "https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp"
+        try:
+            resp = requests.get(url, headers=self.headers, timeout=10)
+            data = resp.json()
+            if data.get("code") != 0:
+                return {"coin_exp": 0}
+            
+            coin_exp = 0
+            for item in data.get("data", {}).get("list", []):
+                reason = item.get("reason", "")
+                exp = item.get("delta", 0)
+                if "投币" in reason:
+                    coin_exp += exp
+            return {"coin_exp": coin_exp}
+        except Exception as e:
+            logger.error(f"获取任务经验失败: {e}")
+            return {"coin_exp": 0}
 
-    
     def get_dynamic_videos(self):
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=5&rid=1'
         try:
