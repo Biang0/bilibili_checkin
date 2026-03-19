@@ -68,7 +68,6 @@ def run_all_tasks_for_account(bili, config):
     tasks_result['漫画签到']    = bili.manga_sign()
     tasks_result['投币任务']    = execute_coin_task(bili, user_info, config)
     tasks_result['观看视频']    = bili.watch_video(bvid)
-    tasks_result['风纪委每日']  = bili.judgement_daily()
 
     return tasks_result, user_info
 
