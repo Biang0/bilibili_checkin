@@ -3,7 +3,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from bilibili import BilibiliTask
-from push import format_push_message, send_to_pushplus
 
 class BeijingFormatter:
     @staticmethod
@@ -25,149 +24,69 @@ def mask_uid(uid: str) -> str:
     uid_str = str(uid)
     if len(uid_str) <= 2:
         return uid_str[0] + '*'
-    return uid_str[:2] + '*' * (len(uid_str) - 2)
+    return uid_str[:2] + '*' * 5
 
 # ===========================
-# 【合并核心】旧仓库智能投币（经验判断）
+# ✅ 【只判断、绝对不投币】
 # ===========================
-def execute_coin_task(bili, user_info, config):
+def check_coin_status(bili):
     try:
         task_info = bili.get_task_info()
         coin_exp = task_info.get("coin_exp", 0)
         today_coin = coin_exp // 10
     except:
         today_coin = 0
+        coin_exp = 0
+
+    # 输出判断结果
+    logger.info(f"======================================")
+    logger.info(f"📊 今日投币状态（只判断，不投币）")
+    logger.info(f"📊 投币获得经验：{coin_exp} / 50")
+    logger.info(f"📊 今日已投硬币：{today_coin} / 5 个")
+    logger.info(f"======================================")
 
     if today_coin >= 5:
-        return True, f"今日已投满 {today_coin}/5，自动跳过"
-
-    max_coin = int(config.get('COIN_ADD_NUM'))
-    need_coin = min(max_coin, 5 - today_coin)
-
-    if need_coin <= 0:
-        return True, f"今日已投 {today_coin} 个，无需再投"
-
-    balance = user_info.get("money", 0)
-    if balance < need_coin:
-        return True, f"硬币不足({balance})，跳过"
-
-    if config.get('COIN_VIDEO_SOURCE') == 'ranking':
-        video_list = bili.get_ranking_videos()
+        logger.info("✅ 状态：今日已投满 5 个，无需投币")
     else:
-        video_list = bili.get_dynamic_videos()
-
-    if not video_list:
-        return False, "获取视频失败"
-
-    added = 0
-    for bvid in video_list:
-        if added >= need_coin:
-            break
-        ok, msg = bili.add_coin(bvid, 1, int(config.get('COIN_SELECT_LIKE')))
-        if ok:
-            added += 1
-            logger.info(f"投币成功 {added}/{need_coin}")
-        elif "已达到" in msg:
-            break
-
-    return True, f"✅ 今日已投：{today_coin + added}/5 | 本次自动投：{added}"
+        logger.info(f"✅ 状态：今日可投，还能投 {5 - today_coin} 个")
+    
+    return True, "仅查询状态，未投币"
 
 # ===========================
-# 【新仓库】完整任务调度
+# 主任务（只查询，不投币）
 # ===========================
-def run_all_tasks_for_account(bili, config):
-    tasks_to_run = [task.strip() for task in config.get('TASK_CONFIG', '').split(',') if task.strip()]
-    if not tasks_to_run:
-        tasks_to_run = ['live_sign', 'manga_sign', 'share_video', 'add_coin']
-
+def run_all_tasks_for_account(bili):
     user_info = bili.get_user_info()
     if not user_info:
-        return {'登录检查': (False, 'Cookie失效或网络问题')}, None
-        
-    masked_uname = mask_string(user_info.get('uname'))
-    logger.info(f"账号名称: {masked_uname}")
+        return {'登录检查': (False, 'Cookie失效')}, None
+
+    logger.info(f"账号名称: {mask_string(user_info.get('uname'))}")
     tasks_result = {}
     
-    video_list = bili.get_dynamic_videos()
-    bvid_for_task = video_list[0] if video_list else 'BV1GJ411x7h7'
-
-    if 'share_video' in tasks_to_run:
-        tasks_result['分享视频'] = bili.share_video(bvid_for_task)
-    if 'live_sign' in tasks_to_run:
-        tasks_result['直播签到'] = bili.live_sign()
-    if 'manga_sign' in tasks_to_run:
-        tasks_result['漫画签到'] = bili.manga_sign()
-    if 'add_coin' in tasks_to_run:
-        tasks_result['投币任务'] = execute_coin_task(bili, user_info, config)
-
-    tasks_result['观看视频'] = bili.watch_video(bvid_for_task)
+    # 只判断投币状态，绝对不投
+    tasks_result['投币状态查询'] = check_coin_status(bili)
+    
     return tasks_result, user_info
 
 def main():
     config = {
-        "BILIBILI_COOKIE": os.environ.get('BILIBILI_COOKIE'),
-        "PUSH_PLUS_TOKEN": os.environ.get('PUSH_PLUS_TOKEN'),
-        "TASK_CONFIG": os.environ.get('TASK_CONFIG') or 'live_sign,manga_sign,share_video,add_coin',
-        "COIN_ADD_NUM": os.environ.get('COIN_ADD_NUM') or '5',
-        "COIN_SELECT_LIKE": os.environ.get('COIN_SELECT_LIKE') or '1',
-        "COIN_VIDEO_SOURCE": os.environ.get('COIN_VIDEO_SOURCE') or 'dynamic'
+        "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
     }
-    
+
     if not config["BILIBILI_COOKIE"]:
-        logger.error('环境变量 BILIBILI_COOKIE 未设置，程序终止')
+        logger.error("未配置Cookie")
         sys.exit(1)
 
     cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split('###') if c.strip()]
-    logger.info(f"检测到 {len(cookies)} 个账号，开始执行任务...")
-    
-    all_results = []
-    any_failed = False
     for i, cookie in enumerate(cookies, 1):
-        logger.info(f"=== 账号{i} 任务完成情况 ===")
+        logger.info(f"=== 账号{i} 【只判断、不投币】模式 ===")
         bili = BilibiliTask(cookie)
-        tasks_result, user_info = run_all_tasks_for_account(bili, config)
-        final_user_info = bili.get_user_info() if user_info else None
-        all_results.append({'account_index': i, 'tasks': tasks_result, 'user_info': final_user_info})
-
-        account_failed = False
-        valid_task_count = 0
-        valid_success_count = 0
+        tasks_result, user_info = run_all_tasks_for_account(bili)
 
         for task_name, (success, msg) in tasks_result.items():
-            if "push" in task_name: continue
-            level = logger.info if success else logger.error
-            name = mask_string(final_user_info.get('uname')) if final_user_info else f'账号{i}'
-            if msg and any(k in msg for k in IGNORE_FAIL_KEYWORDS):
-                level(f"[账号{i}] {task_name}: 跳过，原因: {msg}")
-                continue
-            valid_task_count += 1
-            if success:
-                valid_success_count += 1
-                level(f"[账号{i}] {task_name}: 成功")
-            else:
-                level(f"[账号{i}] {task_name}: 失败，原因: {msg}")
+            logger.info(f"[账号{i}] {task_name}: {'成功' if success else '失败'} | {msg}")
 
-        if not user_info or valid_task_count == 0 or valid_success_count == 0:
-            account_failed = True
-
-        logger.info(f"=== 账号{i} 用户信息 ===")
-        if final_user_info:
-            logger.info(f"用户名: {mask_string(final_user_info.get('uname'))}")
-            logger.info(f"UID: {mask_uid(final_user_info.get('mid'))}")
-            logger.info(f"等级: {final_user_info.get('level_info', {}).get('current_level')}")
-            logger.info(f"经验: {final_user_info.get('level_info', {}).get('current_exp')}")
-            logger.info(f"硬币: {final_user_info.get('money')}")
-        logger.info(f"--- 账号 {name} 任务执行完毕 ---")
-        logger.info("-" * 40)
-        if account_failed: any_failed = True
-
-    if config["PUSH_PLUS_TOKEN"]:
-        logger.info('准备发送推送通知...')
-        send_to_pushplus(config["PUSH_PLUS_TOKEN"], "Bilibili 任务通知", format_push_message(all_results))
-
-    sys.exit(1 if any_failed else 0)
-
-IGNORE_FAIL_KEYWORDS = ["未配置", "跳过", "已下线", "达上限", "签到活动已下线", "漫画签到失败"]
+        logger.info(f"=== 账号{i} 任务结束（未投任何币）===\n")
 
 if __name__ == '__main__':
     main()
