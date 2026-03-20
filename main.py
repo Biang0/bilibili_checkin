@@ -67,7 +67,7 @@ def execute_coin_task(bili, user_info, config):
     
     # 6. 执行投币
     try:
-        select_like = int(config.get('COIN_SELECT_LIKE', 1))
+        select_like = int(config.get('COIN_SELECT_LIKE', 0))
     except:
         select_like = 1
     
