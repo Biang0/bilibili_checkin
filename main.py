@@ -24,12 +24,14 @@ def mask_string(s: str):
 def execute_coin_task(bili, user_info, config):
     try:
         task_info = bili.get_task_info()
-        # 修复：精准读取今日已投币数，兼容你的原始接口
-        today_coin = task_info.get("today_coin", task_info.get("coin_exp", 0) // 10)
+        coin_exp = task_info.get("coin_exp", 0)
+        today_coin = coin_exp // 10
     except Exception as e:
         logger.error(f"获取投币记录失败: {e}")
+        coin_exp = 0
         today_coin = 0
 
+    # ===================== ✅ 显示：硬币剩余 + 已投 + 待投 =====================
     coin_left = user_info.get("money", 0)
     need_coin = max(0, 5 - today_coin)
     
@@ -38,9 +40,46 @@ def execute_coin_task(bili, user_info, config):
     logger.info(f"✅ 今日已投：{today_coin} / 5 个")
     logger.info(f"🔄 今日待投：{need_coin} 个")
     logger.info(f"========================================")
+    # ========================================================================
 
-    # 保持你的需求：已投币，跳过自动投币
-    return True, f"已设置不投币(COIN_ADD_NUM=0)"
+    try:
+        want_coin = int(config.get('COIN_ADD_NUM', 5))
+    except:
+        want_coin = 5
+
+    if want_coin <= 0:
+        return True, f"已设置不投币(COIN_ADD_NUM={want_coin})"
+
+    if coin_exp >= 50:
+        return True, f"今日已投满5个，无需重复投"
+
+    need = min(want_coin, 5 - today_coin)
+    need = max(need, 0)
+
+    if coin_left < need and need > 0:
+        return False, f"硬币不足，当前{coin_left}个，需{need}个"
+
+    video_list = bili.get_dynamic_videos()
+    if not video_list and need > 0:
+        return False, "获取视频失败"
+
+    try:
+        select_like = int(config.get('COIN_SELECT_LIKE', 1))
+    except:
+        select_like = 1
+
+    success = 0
+    for bvid in video_list:
+        if success >= need:
+            break
+        if bili.check_video_coin_status(bvid):
+            continue
+        ok, msg = bili.add_coin(bvid, 1, select_like)
+        if ok:
+            success += 1
+
+    total = today_coin + success
+    return True, f"本次投{success}个，累计{total}/5"
 
 def run_all_tasks_for_account(bili, config):
     user_info = bili.get_user_info()
@@ -65,21 +104,18 @@ def format_push_message(all_results):
     for result in all_results:
         user_info = result.get('user_info')
         if user_info:
-            # 修复：彻底解决 KeyError: 'uname' 崩溃
-            account_name = user_info.get('uname', f"账号 {result['account_index']}")
-            level = user_info.get('level_info', {}).get('current_level', 0)
+            account_name = user_info['uname']
+            content.append(f"--- \n#### 账号: {account_name} (Lv.{user_info['level_info']['current_level']})")
         else:
             account_name = f"账号 {result['account_index']}"
-            level = 0
-        
-        content.append(f"--- \n#### 账号: {account_name} (Lv.{level})")
+            content.append(f"--- \n#### {account_name}")
 
         for name, (success, message) in result['tasks'].items():
             status_icon = "✅" if success else "❌"
             reason = f" - {message}" if message else ""
             content.append(f"- **{name}**: {status_icon}{reason}")
         if user_info:
-            content.append(f"- **硬币余额**: {user_info.get('money', 0)}")
+            content.append(f"- **硬币余额**: {user_info['money']}")
 
     beijing_time = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
     content.append(f"\n> 报告时间: {beijing_time}")
