@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from loguru import logger
 from bilibili import BilibiliTask
 import requests
+import json
 
 class BeijingFormatter:
     @staticmethod
@@ -41,12 +42,11 @@ def execute_coin_task(bili, user_info, config):
     if want_coin == 0:
         return True, "已设置不投币(COIN_ADD_NUM=0)"
     
-    # 2. 获取实时硬币余额（关键修复：使用BilibiliTask的get_coin_balance方法）
+    # 2. 获取实时硬币余额
     try:
         coin_left = bili.get_coin_balance()
     except Exception as e:
         logger.error(f"获取硬币余额失败: {e}")
-        # 回退到从user_info获取
         coin_left = user_info.get("money", 0)
     
     # 3. 显示状态
@@ -56,24 +56,21 @@ def execute_coin_task(bili, user_info, config):
     logger.info(f"⚠️  每日上限5个，最终以B站服务器确认为准")
     logger.info(f"========================================")
     
-    # 4. 检查硬币余额
     if coin_left < want_coin:
         return False, f"硬币不足（余额{coin_left}，需要{want_coin}）"
     
-    # 5. 获取视频列表
     video_list = bili.get_dynamic_videos()
     if not video_list:
         return False, "无可用视频"
     
-    # 6. 执行投币
     try:
-        select_like = int(config.get('COIN_SELECT_LIKE', 0))
+        select_like = int(config.get('COIN_SELECT_LIKE', 1))
     except:
         select_like = 1
     
     success = 0
     attempted = 0
-    max_attempts = min(len(video_list), want_coin * 2)  # 最大尝试次数
+    max_attempts = min(len(video_list), want_coin * 2)
     
     for bvid in video_list:
         if attempted >= max_attempts:
@@ -96,10 +93,8 @@ def execute_coin_task(bili, user_info, config):
         else:
             logger.warning(f"❌ 投币失败: {msg}")
         
-        # 随机延迟，避免请求过于频繁
         time.sleep(random.uniform(1, 2))
     
-    # 7. 返回结果
     if success > 0:
         return True, f"投币完成: 成功{success}/{want_coin}个"
     else:
@@ -116,11 +111,8 @@ def run_all_tasks_for_account(bili, config):
     
     tasks_result = {}
     video_list = bili.get_dynamic_videos()
-    
-    # 获取一个视频用于分享和观看任务
     bvid = video_list[0] if video_list else "BV1GJ411x7h7"
     
-    # 执行各项任务
     logger.info("--- 开始执行分享任务 ---")
     tasks_result['分享视频'] = bili.share_video(bvid)
     
@@ -156,7 +148,6 @@ def format_push_message(all_results):
             content.append(f"- **{name}**: {status_icon}{reason}")
         
         if user_info:
-            # 尝试获取最新的硬币余额
             coin_balance = user_info.get('money', 0)
             content.append(f"- **硬币余额**: {coin_balance}")
 
@@ -203,7 +194,7 @@ def send_to_telegram(bot_token, chat_id, content):
 def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
-        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),  # 默认改为5
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),
         "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),
         "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN", ""),
         "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN", ""),
@@ -233,7 +224,6 @@ def main():
             'tasks': tasks
         })
 
-        # 记录本账号任务结果
         logger.info(f"\n账号{idx} 任务结果:")
         for name, (ok, info) in tasks.items():
             status = "✅ 成功" if ok else "❌ 失败"
@@ -243,13 +233,11 @@ def main():
         logger.info(f"账号{idx} 任务完成")
         logger.info(f"{'='*40}\n")
         
-        # 账号间延迟，避免请求过于频繁
         if idx < len(cookies):
             delay = random.uniform(3, 6)
             logger.info(f"等待 {delay:.1f} 秒后处理下一个账号...")
             time.sleep(delay)
 
-    # 生成并发送报告
     if all_results:
         final_msg = format_push_message(all_results)
         logger.info("\n" + "="*50)
