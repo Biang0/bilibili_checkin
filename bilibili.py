@@ -19,33 +19,51 @@ class BilibiliTask:
                 return item.split('=')[1]
         return None
 
+    # ====================== ✅ 终极修复：读取完整今日投币经验 ======================
     def get_task_info(self):
         try:
-            res = requests.get("https://api.bilibili.com/x/member/web/exp/log", headers=self.headers, timeout=8)
-            data = res.json()
-            if data.get("code") != 0:
-                logger.warning(f"获取经验日志失败: {data.get('message')}")
-                return {"coin_exp": 0}
-
+            # 获取今日 0 点北京时间
             beijing_tz = timezone(timedelta(hours=8))
-            today_date = datetime.now(beijing_tz).date()
+            today = datetime.now(beijing_tz)
+            today_start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=beijing_tz)
+            today_start_ts = int(today_start.timestamp())
 
             coin_exp = 0
-            for item in data.get("data", {}).get("list", []):
-                reason = item.get("reason", "")
-                if "投币" in reason:
-                    ts = item.get("time")
-                    if ts:
-                        try:
-                            ts_int = int(ts)
-                            item_date = datetime.fromtimestamp(ts_int, tz=beijing_tz).date()
-                            if item_date == today_date:
-                                coin_exp += item.get("delta", 0)
-                        except:
-                            continue
+            page = 1
+            max_page = 5  # 最多读5页，防止死循环
+
+            while page <= max_page:
+                url = f"https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
+                res = requests.get(url, headers=self.headers, timeout=10)
+                data = res.json()
+
+                if data.get("code") != 0 or not data.get("data", {}).get("list"):
+                    break
+
+                for item in data["data"]["list"]:
+                    try:
+                        # 时间判断
+                        ts = int(item.get("time", 0))
+                        if ts < today_start_ts:
+                            # 已翻到昨日，直接结束
+                            return {"coin_exp": coin_exp}
+
+                        # 只统计【投币】获得的经验
+                        reason = item.get("reason", "")
+                        exp = int(item.get("delta", 0))
+
+                        if "投币" in reason and exp > 0:
+                            coin_exp += exp
+
+                    except:
+                        continue
+
+                page += 1
+
             return {"coin_exp": coin_exp}
+
         except Exception as e:
-            logger.error(f"解析投币经验异常: {e}")
+            logger.error(f"获取经验日志失败: {e}")
             return {"coin_exp": 0}
 
     def get_user_info(self):
@@ -56,10 +74,8 @@ class BilibiliTask:
             data = res.json()
             if data['code'] == 0:
                 return data['data']
-            logger.warning(f"获取用户信息失败: {data.get('message')}")
             return None
-        except Exception as e:
-            logger.error(f"请求用户信息异常: {e}")
+        except:
             return None
 
     def get_dynamic_videos(self):
@@ -71,8 +87,7 @@ class BilibiliTask:
             if data['code'] == 0:
                 return [video['bvid'] for video in data.get('data', {}).get('archives', [])]
             return []
-        except Exception as e:
-            logger.error(f"获取视频异常: {e}")
+        except:
             return []
 
     def check_video_coin_status(self, bvid):
@@ -88,36 +103,40 @@ class BilibiliTask:
 
     def add_coin(self, bvid, num=1, select_like=1):
         if not self.csrf:
-            return False, "csrf 未找到"
-        if self.get_task_info()["coin_exp"] >= 50:
-            return True, "今日已达上限"
+            return False, "csrf 不存在"
         if self.check_video_coin_status(bvid):
             return True, "该视频已投币"
+        if self.get_task_info()["coin_exp"] >= 50:
+            return True, "今日投币已达上限"
 
         url = 'https://api.bilibili.com/x/web-interface/coin/add'
-        data = {'bvid': bvid, 'multiply': num, 'select_like': select_like, 'csrf': self.csrf}
+        data = {
+            'bvid': bvid,
+            'multiply': num,
+            'select_like': select_like,
+            'csrf': self.csrf
+        }
+
         try:
             res = requests.post(url, headers=self.headers, data=data, timeout=10)
             data = res.json()
             if data['code'] == 0:
                 return True, "投币成功"
-            return False, data.get('message', '投币失败')
-        except Exception as e:
-            return False, str(e)
+            return False, data.get('message', '未知错误')
+        except:
+            return False, "请求失败"
 
     def share_video(self, bvid):
         if not self.csrf:
-            return False, "csrf 未找到"
+            return False, "csrf 不存在"
         url = 'https://api.bilibili.com/x/web-interface/share/add'
         data = {'bvid': bvid, 'csrf': self.csrf}
         try:
             res = requests.post(url, headers=self.headers, data=data, timeout=10)
             data = res.json()
-            if data['code'] == 0:
-                return True, "分享成功"
-            return False, data.get('message', '分享失败')
-        except Exception as e:
-            return False, str(e)
+            return (data['code'] == 0, "分享成功" if data['code'] == 0 else "分享失败")
+        except:
+            return False, "分享异常"
 
     def watch_video(self, bvid):
         url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'
@@ -125,11 +144,9 @@ class BilibiliTask:
         try:
             res = requests.post(url, headers=self.headers, data=data, timeout=10)
             data = res.json()
-            if data['code'] == 0:
-                return True, "观看成功"
-            return False, data.get('message', '观看失败')
-        except Exception as e:
-            return False, str(e)
+            return (data['code'] == 0, "观看成功" if data['code'] == 0 else "观看失败")
+        except:
+            return False, "观看异常"
 
     def live_sign(self):
         url = 'https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign'
@@ -137,23 +154,20 @@ class BilibiliTask:
             res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data['code'] == 0:
-                return True, data.get('data', {}).get('text', '直播签到成功')
+                return True, "直播签到成功"
             return False, data.get('message', '直播签到失败')
-        except Exception as e:
-            return False, str(e)
+        except:
+            return False, "直播签到异常"
 
     def manga_sign(self):
         try:
             headers = self.headers.copy()
-            headers['Referer'] = "https://manga.bilibili.com/"
+            headers['Referer'] = 'https://manga.bilibili.com/'
             url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
             res = requests.post(url, headers=headers, data={"platform": "ios"}, timeout=10)
             data = res.json()
             if data.get("code") == 0:
                 return True, "漫画签到成功"
-            elif "clockIn" in str(data) or data.get("code") in [-1, 1]:
-                return True, "漫画今日已签到"
-            else:
-                return False, "漫画签到失败"
-        except Exception as e:
-            return False, f"漫画签到异常: {str(e)}"
+            return False, "漫画今日已签到"
+        except:
+            return False, "漫画签到异常"
