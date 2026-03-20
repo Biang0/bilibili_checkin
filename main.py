@@ -28,9 +28,19 @@ def execute_coin_task(bili, user_info, config):
         today_coin = coin_exp // 10
     except Exception as e:
         logger.error(f"获取投币记录失败: {e}")
+        coin_exp = 0
         today_coin = 0
 
-    logger.info(f"今日已投币：{today_coin}/5")
+    # ===================== ✅ 显示：硬币剩余 + 已投 + 待投 =====================
+    coin_left = user_info.get("money", 0)
+    need_coin = max(0, 5 - today_coin)
+    
+    logger.info(f"========================================")
+    logger.info(f"💰 硬币剩余：{coin_left} 个")
+    logger.info(f"✅ 今日已投：{today_coin} / 5 个")
+    logger.info(f"🔄 今日待投：{need_coin} 个")
+    logger.info(f"========================================")
+    # ========================================================================
 
     try:
         want_coin = int(config.get('COIN_ADD_NUM', 5))
@@ -38,7 +48,7 @@ def execute_coin_task(bili, user_info, config):
         want_coin = 5
 
     if want_coin <= 0:
-        return True, f"已设置不投币(COIN_ADD_NUM=0)，今日已投{today_coin}/5"
+        return True, f"已设置不投币(COIN_ADD_NUM={want_coin})"
 
     if coin_exp >= 50:
         return True, f"今日已投满5个，无需重复投"
@@ -46,9 +56,8 @@ def execute_coin_task(bili, user_info, config):
     need = min(want_coin, 5 - today_coin)
     need = max(need, 0)
 
-    balance = user_info.get("money", 0)
-    if balance < need and need > 0:
-        return False, f"硬币不足，当前{balance}个，需{need}个"
+    if coin_left < need and need > 0:
+        return False, f"硬币不足，当前{coin_left}个，需{need}个"
 
     video_list = bili.get_dynamic_videos()
     if not video_list and need > 0:
@@ -144,18 +153,18 @@ def send_to_telegram(bot_token, chat_id, content):
         if result.get("ok"):
             logger.info("✅ Telegram 推送成功！")
         else:
-            logger.error(f"❌ TG 推送失败: {result.get('description')}")
+            logger.error(f'❌ TG 推送失败: {result.get("description")}')
     except Exception as e:
         logger.error(f"TG 异常: {e}")
 
 def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
-        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM") or "5",
-        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE") or "1",
-        "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN"),
-        "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN"),
-        "TG_CHAT_ID": os.environ.get("TG_CHAT_ID"),
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 0),
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),
+        "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN", ""),
+        "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN", ""),
+        "TG_CHAT_ID": os.environ.get("TG_CHAT_ID", ""),
     }
 
     if not config["BILIBILI_COOKIE"]:
@@ -178,7 +187,7 @@ def main():
 
         for name, (ok, info) in tasks.items():
             logger.info(f"[账号{idx}] {name}：{'成功' if ok else '失败'} | {info}")
-        logger.info("=== 任务完成 ===\n")
+        logger.info(f"=== 任务完成 ===\n")
 
     final_msg = format_push_message(all_results)
     send_to_pushplus(config["PUSH_PLUS_TOKEN"], "Bilibili 任务报告", final_msg)
