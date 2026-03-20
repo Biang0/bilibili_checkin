@@ -19,10 +19,26 @@ class BilibiliTask:
                 return item.split('=')[1]
         return None
 
-    # ====================== ✅ 终极修复：读取完整今日投币经验 ======================
+    # ====================== ✅ 官方任务接口（和你发的别人代码完全一致！） ======================
     def get_task_info(self):
+        """
+        模仿优质代码：调用B站官方任务查询接口
+        返回：{"coin_exp": 0-50}  50=投满5个
+        """
         try:
-            # 获取今日 0 点北京时间
+            url = "https://api.bilibili.com/x/member/web/exp/status"
+            res = requests.get(url, headers=self.headers, timeout=10)
+            data = res.json()
+            
+            if data.get("code") == 0:
+                # 直接获取官方今日已投币经验（准到离谱）
+                coin_exp = data["data"]["coins"]
+                return {"coin_exp": coin_exp}
+        except Exception as e:
+            logger.error(f"官方任务接口失败，切换备用方式: {e}")
+
+        # ====================== 备用：原来的经验日志（兜底） ======================
+        try:
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz)
             today_start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=beijing_tz)
@@ -30,7 +46,7 @@ class BilibiliTask:
 
             coin_exp = 0
             page = 1
-            max_page = 5  # 最多读5页，防止死循环
+            max_page = 5
 
             while page <= max_page:
                 url = f"https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
@@ -42,13 +58,10 @@ class BilibiliTask:
 
                 for item in data["data"]["list"]:
                     try:
-                        # 时间判断
                         ts = int(item.get("time", 0))
                         if ts < today_start_ts:
-                            # 已翻到昨日，直接结束
                             return {"coin_exp": coin_exp}
 
-                        # 只统计【投币】获得的经验
                         reason = item.get("reason", "")
                         exp = int(item.get("delta", 0))
 
@@ -57,15 +70,13 @@ class BilibiliTask:
 
                     except:
                         continue
-
                 page += 1
-
             return {"coin_exp": coin_exp}
-
         except Exception as e:
             logger.error(f"获取经验日志失败: {e}")
             return {"coin_exp": 0}
 
+    # =====================================================================================
     def get_user_info(self):
         url = 'https://api.bilibili.com/x/web-interface/nav'
         try:
