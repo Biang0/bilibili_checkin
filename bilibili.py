@@ -1,5 +1,6 @@
 import requests
 from loguru import logger
+from datetime import datetime, timedelta, timezone
 
 class BilibiliTask:
     def __init__(self, cookie):
@@ -18,19 +19,33 @@ class BilibiliTask:
                 return item.split('=')[1]
         return None
 
-    # ====================== 新增：查询今日投币经验（判断投币数量） ======================
+    # ====================== 修复：仅统计今日投币经验 ======================
     def get_task_info(self):
         try:
             res = requests.get("https://api.bilibili.com/x/member/web/exp/log", headers=self.headers, timeout=8)
             data = res.json()
             if data.get("code") != 0:
+                logger.warning(f"获取经验日志失败: {data.get('message')}")
                 return {"coin_exp": 0}
+
+            # 获取今日北京时间的日期（忽略时分秒）
+            beijing_tz = timezone(timedelta(hours=8))
+            today_date = datetime.now(beijing_tz).date()
+
             coin_exp = 0
             for item in data.get("data", {}).get("list", []):
-                if "投币" in item.get("reason", ""):
-                    coin_exp += item.get("delta", 0)
+                reason = item.get("reason", "")
+                if "投币" in reason:
+                    # 解析记录时间（B站API通常返回秒级时间戳）
+                    ts = item.get("time")
+                    if ts:
+                        item_date = datetime.fromtimestamp(ts, tz=beijing_tz).date()
+                        # 仅累加今日的投币经验
+                        if item_date == today_date:
+                            coin_exp += item.get("delta", 0)
             return {"coin_exp": coin_exp}
-        except:
+        except Exception as e:
+            logger.error(f"解析投币经验异常: {e}")
             return {"coin_exp": 0}
 
     def get_user_info(self):
