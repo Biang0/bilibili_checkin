@@ -6,10 +6,7 @@ import random
 import json
 
 class BilibiliTask:
-    """B站自动化任务API客户端"""
-    
     def __init__(self, cookie):
-        """初始化Bilibili任务客户端"""
         self.cookie = cookie
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
@@ -18,11 +15,10 @@ class BilibiliTask:
             'Cookie': cookie
         }
         self.csrf = self._get_csrf()
-        self.session = requests.Session()  # 使用Session提高性能
+        self.session = requests.Session()
         self.session.headers.update(self.headers)
 
     def _get_csrf(self):
-        """从cookie中提取csrf token (bili_jct)"""
         for item in self.cookie.split(';'):
             if item.strip().startswith('bili_jct'):
                 return item.split('=')[1]
@@ -31,18 +27,18 @@ class BilibiliTask:
 
     def get_task_info(self):
         """
-        获取今日投币任务信息
-        返回包含今日已投币数量的字典
+        修复版：获取今日投币任务信息。
+        正确解析经验日志中的时间字符串，计算今日获得的投币经验。
+        返回格式: {"today_coin": 今日已投硬币数, "coin_exp": 今日投币获得的总经验值}
         """
         try:
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz)
             today_start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=beijing_tz)
-            today_start_ts = int(today_start.timestamp())
             
             coin_exp = 0
             page = 1
-            max_page = 5  # 最多查询5页，每页30条记录
+            max_page = 5
 
             while page <= max_page:
                 url = f"https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
@@ -50,40 +46,54 @@ class BilibiliTask:
                 data = res.json()
 
                 if data.get("code") != 0 or not data.get("data", {}).get("list"):
-                    break  # 没有数据或请求失败
+                    break
 
                 for item in data["data"]["list"]:
                     try:
-                        ts = int(item.get("time", 0))
-                        if ts < today_start_ts:
-                            # 遇到昨天的记录，停止解析
-                            today_coin = coin_exp // 10  # 10经验=1硬币
-                            logger.debug(f"从经验日志解析今日已投币: {today_coin}个 (经验值: {coin_exp})")
+                        time_str = item.get("time")
+                        if not time_str:
+                            continue
+                        
+                        item_time = None
+                        try:
+                            item_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            try:
+                                timestamp = int(time_str)
+                                item_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                            except ValueError:
+                                logger.debug(f"无法解析的时间格式，已跳过: {time_str}")
+                                continue
+                        
+                        if item_time.tzinfo is None:
+                            item_time = item_time.replace(tzinfo=timezone.utc)
+                        item_time_beijing = item_time.astimezone(beijing_tz)
+                        
+                        if item_time_beijing.date() < today_start.date():
+                            today_coin = coin_exp // 10
+                            logger.info(f"从经验日志解析：今日已投币 {today_coin} 个（获得 {coin_exp} 经验）")
                             return {"today_coin": today_coin, "coin_exp": coin_exp}
-
+                        
                         reason = item.get("reason", "")
                         exp = int(item.get("delta", 0))
-
-                        # 检查是否是投币相关的经验
                         if "投币" in reason and exp > 0:
                             coin_exp += exp
+                            logger.debug(f"记录到投币经验: {time_str}, 原因: {reason}, 经验值: {exp}")
 
                     except Exception as e:
-                        logger.warning(f"解析经验日志项失败: {e}")
+                        logger.warning(f"解析经验日志单条记录时出错（已跳过）: {e}")
                         continue
                 page += 1
 
-            # 遍历完所有记录
             today_coin = coin_exp // 10
-            logger.debug(f"今日投币经验解析完成: {today_coin}个 (经验值: {coin_exp})")
+            logger.info(f"经验日志解析完成：今日已投币 {today_coin} 个（获得 {coin_exp} 经验）")
             return {"today_coin": today_coin, "coin_exp": coin_exp}
 
         except Exception as e:
-            logger.error(f"获取投币信息失败: {e}")
+            logger.error(f"获取投币任务信息过程发生异常: {e}")
             return {"today_coin": 0, "coin_exp": 0}
 
     def get_coin_balance(self):
-        """获取用户当前硬币余额"""
         url = 'https://api.bilibili.com/x/web-interface/nav'
         try:
             res = self.session.get(url, timeout=10)
@@ -99,7 +109,6 @@ class BilibiliTask:
             return 0
 
     def get_user_info(self):
-        """获取用户基本信息"""
         url = 'https://api.bilibili.com/x/web-interface/nav'
         try:
             res = self.session.get(url, timeout=10)
@@ -113,7 +122,6 @@ class BilibiliTask:
             return None
 
     def get_dynamic_videos(self):
-        """获取动态视频列表"""
         url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=10&rid=1'
         try:
             res = self.session.get(url, timeout=10)
@@ -129,7 +137,6 @@ class BilibiliTask:
             return []
 
     def check_video_coin_status(self, bvid):
-        """检查视频投币状态"""
         url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'
         try:
             res = self.session.get(url, timeout=10)
@@ -143,14 +150,9 @@ class BilibiliTask:
             return False
 
     def add_coin(self, bvid, num=1, select_like=1, max_retry=2):
-        """
-        给视频投币
-        返回: (成功与否, 消息)
-        """
         if not self.csrf:
             return False, "csrf token不存在"
         
-        # 检查是否已投过币
         if self.check_video_coin_status(bvid):
             return True, "该视频已投币"
         
@@ -162,7 +164,6 @@ class BilibiliTask:
             'csrf': self.csrf
         }
         
-        # 重试机制
         for attempt in range(max_retry):
             try:
                 res = self.session.post(url, data=data, timeout=10)
@@ -172,13 +173,13 @@ class BilibiliTask:
                     logger.info(f"投币成功: {bvid}")
                     return True, "投币成功"
                 elif data_res.get('code') == 34005:
-                    return True, "今日投币已达上限"  # B站服务端验证
+                    return True, "今日投币已达上限"
                 elif data_res.get('code') == 34004:
                     return False, "硬币不足"
                 else:
                     error_msg = data_res.get('message', f"错误代码: {data_res.get('code')}")
                     if attempt < max_retry - 1:
-                        time.sleep(1)  # 失败后等待1秒重试
+                        time.sleep(1)
                         continue
                     return False, error_msg
                     
@@ -192,7 +193,6 @@ class BilibiliTask:
         return False, "重试后仍失败"
 
     def share_video(self, bvid):
-        """分享视频"""
         if not self.csrf:
             return False, "csrf token不存在"
         
@@ -210,7 +210,6 @@ class BilibiliTask:
             return False, "分享异常"
 
     def watch_video(self, bvid, played_time=30):
-        """观看视频（心跳包）"""
         url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'
         data = {
             'bvid': bvid,
@@ -229,7 +228,6 @@ class BilibiliTask:
             return False, "观看异常"
 
     def live_sign(self):
-        """直播签到"""
         try:
             url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/WebSign"
             headers = {
@@ -259,7 +257,6 @@ class BilibiliTask:
             return False, "直播签到异常"
 
     def manga_sign(self):
-        """漫画签到"""
         try:
             url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
             headers = {
