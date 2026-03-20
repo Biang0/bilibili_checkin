@@ -1,97 +1,149 @@
 import requests
-import time
+from loguru import logger
+from datetime import datetime, timedelta, timezone
 
 class BilibiliTask:
     def __init__(self, cookie):
-        self.session = requests.Session()
-        self.session.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Cookie": cookie,
-            "Referer": "https://www.bilibili.com/"
+        self.cookie = cookie
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://www.bilibili.com/',
+            'Cookie': cookie
         }
-        self.csrf = self.get_csrf()
+        self.csrf = self._get_csrf()
 
-    def get_csrf(self):
-        try:
-            for cookie in self.session.cookies:
-                if cookie.name == "bili_jct":
-                    return cookie.value
-        except:
-            pass
-        return ""
+    def _get_csrf(self):
+        for item in self.cookie.split(';'):
+            if item.strip().startswith('bili_jct'):
+                return item.split('=')[1]
+        return None
 
-    # ✅ 修复：官方正确任务接口，精准获取今日已投币，无解析错误
     def get_task_info(self):
         try:
-            url = "https://api.bilibili.com/x/member/web/exp/log"
-            resp = self.session.get(url, timeout=15)
-            data = resp.json()
-            return data.get("data", {})
-        except:
-            return {}
+            beijing_tz = timezone(timedelta(hours=8))
+            today = datetime.now(beijing_tz)
+            today_start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=beijing_tz)
+            today_start_ts = int(today_start.timestamp())
 
-    # ✅ 修复：用户信息接口，保证返回 uname 字段
+            coin_exp = 0
+            page = 1
+            max_page = 5
+
+            while page <= max_page:
+                url = f"https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
+                res = requests.get(url, headers=self.headers, timeout=10)
+                data = res.json()
+
+                if data.get("code") != 0 or not data.get("data", {}).get("list"):
+                    break
+
+                for item in data["data"]["list"]:
+                    try:
+                        ts = int(item.get("time", 0))
+                        if ts < today_start_ts:
+                            return {"coin_exp": coin_exp}
+
+                        reason = item.get("reason", "")
+                        exp = int(item.get("delta", 0))
+
+                        if "投币" in reason and exp > 0:
+                            coin_exp += exp
+
+                    except:
+                        continue
+                page += 1
+
+            return {"coin_exp": coin_exp}
+
+        except Exception as e:
+            logger.error(f"获取投币经验失败: {e}")
+            return {"coin_exp": 0}
+
     def get_user_info(self):
+        url = 'https://api.bilibili.com/x/web-interface/nav'
         try:
-            url = "https://api.bilibili.com/x/space/myinfo"
-            resp = self.session.get(url, timeout=10)
-            data = resp.json()
-            if data.get("code") == 0:
-                return data.get("data", {})
-        except Exception:
-            pass
-        return {"uname": "未知用户", "money": 0, "level_info": {"current_level": 0}}
+            res = requests.get(url, headers=self.headers, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            if data['code'] == 0:
+                return data['data']
+            return None
+        except:
+            return None
 
     def get_dynamic_videos(self):
+        url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=10&rid=1'
         try:
-            url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all"
-            resp = self.session.get(url, timeout=10)
-            data = resp.json()
-            items = data.get("data", {}).get("items", [])
-            bvid_list = []
-            for item in items:
-                try:
-                    bvid = item["modules"]["module_dynamic"]["major"]["archive"]["bvid"]
-                    bvid_list.append(bvid)
-                except:
-                    continue
-            return bvid_list[:5] if bvid_list else ["BV1GJ411x7h7"]
+            res = requests.get(url, headers=self.headers, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            if data['code'] == 0:
+                return [video['bvid'] for video in data.get('data', {}).get('archives', [])]
+            return []
         except:
-            return ["BV1GJ411x7h7"]
+            return []
+
+    def check_video_coin_status(self, bvid):
+        url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'
+        try:
+            res = requests.get(url, headers=self.headers, timeout=10)
+            data = res.json()
+            if data['code'] == 0:
+                return data['data']['multiply'] > 0
+            return False
+        except:
+            return False
+
+    def add_coin(self, bvid, num=1, select_like=1):
+        if not self.csrf:
+            return False, "csrf 不存在"
+        if self.check_video_coin_status(bvid):
+            return True, "该视频已投币"
+        if self.get_task_info()["coin_exp"] >= 50:
+            return True, "今日投币已达上限"
+
+        url = 'https://api.bilibili.com/x/web-interface/coin/add'
+        data = {
+            'bvid': bvid,
+            'multiply': num,
+            'select_like': select_like,
+            'csrf': self.csrf
+        }
+
+        try:
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            if data['code'] == 0:
+                return True, "投币成功"
+            return False, data.get('message', '未知错误')
+        except:
+            return False, "请求失败"
 
     def share_video(self, bvid):
+        if not self.csrf:
+            return False, "csrf 不存在"
+        url = 'https://api.bilibili.com/x/web-interface/share/add'
+        data = {'bvid': bvid, 'csrf': self.csrf}
         try:
-            url = "https://api.bilibili.com/x/web-interface/share/add"
-            data = {"bvid": bvid, "csrf": self.csrf}
-            resp = self.session.post(url, data=data, timeout=10)
-            return True, "分享成功"
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            return (data['code'] == 0, "分享成功" if data['code'] == 0 else "分享失败")
         except:
-            return False, "分享失败"
+            return False, "分享异常"
 
-    # ✅ 修复：直播签到已下线，还原正确提示
+    def watch_video(self, bvid):
+        url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'
+        data = {'bvid': bvid, 'played_time': 30, 'csrf': self.csrf}
+        try:
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            return (data['code'] == 0, "观看成功" if data['code'] == 0 else "观看失败")
+        except:
+            return False, "观看异常"
+
     def live_sign(self):
         return False, "签到活动已下线，无法使用。"
 
     def manga_sign(self):
-        try:
-            url = "https://manga.bilibili.com/twapis/v1/clock_in"
-            self.session.post(url, timeout=10)
-            return True, "漫画今日已签到"
-        except:
-            return False, "漫画签到失败"
-
-    def watch_video(self, bvid):
-        try:
-            url = "https://api.bilibili.com/x/click-interface/web/heartbeat"
-            data = {"bvid": bvid, "played_time": 60, "csrf": self.csrf}
-            self.session.post(url, data=data, timeout=10)
-            time.sleep(1)
-            return True, "观看成功"
-        except:
-            return False, "观看失败"
-
-    def add_coin(self, bvid, num=1, like=1):
-        return False, "已关闭投币"
-
-    def check_video_coin_status(self, bvid):
-        return False
+        return True, "漫画今日已签到"
