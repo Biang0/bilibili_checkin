@@ -32,7 +32,12 @@ def execute_coin_task(bili, user_info, config):
     if today_coin >= 5:
         return True, f"今日已投{today_coin}/5 → 跳过"
 
-    max_coin = int(config.get('COIN_ADD_NUM', 5))
+    # 修复：安全获取配置，防止空字符串报错
+    try:
+        max_coin = int(config.get('COIN_ADD_NUM', 5))
+    except:
+        max_coin = 5
+        
     need_coin = min(max_coin, 5 - today_coin)
     if need_coin <= 0:
         return True, f"今日已投{today_coin}/5"
@@ -49,7 +54,12 @@ def execute_coin_task(bili, user_info, config):
     for bvid in video_list:
         if added >= need_coin:
             break
-        ok, msg = bili.add_coin(bvid, 1, int(config.get('COIN_SELECT_LIKE', 1)))
+        # 修复：安全获取点赞配置
+        try:
+            select_like = int(config.get('COIN_SELECT_LIKE', 1))
+        except:
+            select_like = 1
+        ok, msg = bili.add_coin(bvid, 1, select_like)
         if ok:
             added += 1
     return True, f"已投{today_coin + added}/5（今日经验{coin_exp}）"
@@ -150,8 +160,8 @@ def send_to_telegram(bot_token, chat_id, content):
 def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
-        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),
-        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM") or "5",  # 修复：空值默认5
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE") or "1",  # 修复：空值默认1
         "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN"),
         "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN"),
         "TG_CHAT_ID": os.environ.get("TG_CHAT_ID"),
