@@ -32,30 +32,23 @@ def execute_coin_task(bili, user_info, config):
 
     logger.info(f"今日已投币：{today_coin}/5")
 
-    # 读取用户设置的每日投币数量
     try:
         want_coin = int(config.get('COIN_ADD_NUM', 5))
     except:
         want_coin = 5
 
-    # 用户设置 0 个：直接不投
     if want_coin <= 0:
         return True, f"已设置不投币(COIN_ADD_NUM=0)，今日已投{today_coin}/5"
 
-    # 已投满，跳过
-    if today_coin >= 5:
-        return True, f"今日已投{today_coin}/5 → 跳过"
-
-    # 只投差额
     need = min(want_coin, 5 - today_coin)
+    need = max(need, 0)
 
-    # 硬币余额判断
     balance = user_info.get("money", 0)
-    if balance < need:
+    if balance < need and need > 0:
         return False, f"硬币不足，当前{balance}个，需{need}个"
 
     video_list = bili.get_dynamic_videos()
-    if not video_list:
+    if not video_list and need > 0:
         return False, "获取视频失败"
 
     try:
@@ -74,7 +67,13 @@ def execute_coin_task(bili, user_info, config):
             success += 1
 
     total = today_coin + success
-    return True, f"本次投{success}个，累计{total}/5"
+
+    if today_coin >= 5:
+        return True, f"今日已投满5个，无需重复投"
+    elif need == 0:
+        return True, f"无需投币，今日已投{today_coin}/5"
+    else:
+        return True, f"本次投{success}个，累计{total}/5"
 
 def run_all_tasks_for_account(bili, config):
     user_info = bili.get_user_info()
@@ -129,7 +128,7 @@ def send_to_pushplus(token, title, content):
         else:
             logger.error(f'❌ PushPlus 推送失败: {res.json().get("msg", "未知错误")}')
     except Exception as e:
-        logger.error(f'PushPlus 异常: {e}')
+        logger.error(f"PushPlus 异常: {e}")
 
 def send_to_telegram(bot_token, chat_id, content):
     if not bot_token or not chat_id:
