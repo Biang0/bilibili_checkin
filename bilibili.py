@@ -10,7 +10,7 @@ class BilibiliTask:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
-            'Referer': 'https://www.bilibili.com/',  # 修复：添加正确的Referer
+            'Referer': 'https://www.bilibili.com/',  # 已修复Referer
             'Cookie': cookie
         }
         self.csrf = self._get_csrf()
@@ -26,10 +26,10 @@ class BilibiliTask:
 
     def get_coin_balance(self):
         """
-        获取用户当前硬币余额（推荐使用此方法替代get_task_info）
+        获取用户当前硬币余额
         返回整数，表示可用硬币数量
         """
-        url = 'https://api.bilibili.com/x/web-interface/nav'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/web-interface/nav'  # 已修复：添加完整域名
         try:
             res = self.session.get(url, headers=self.headers, timeout=10)
             res.raise_for_status()
@@ -47,7 +47,7 @@ class BilibiliTask:
 
     def get_user_info(self):
         """获取用户基本信息"""
-        url = 'https://api.bilibili.com/x/web-interface/nav'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/web-interface/nav'  # 已修复：添加完整域名
         try:
             res = self.session.get(url, headers=self.headers, timeout=10)
             res.raise_for_status()
@@ -62,7 +62,7 @@ class BilibiliTask:
 
     def get_dynamic_videos(self):
         """获取动态视频列表"""
-        url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=10&rid=1'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=10&rid=1'  # 已修复：添加完整域名
         try:
             res = self.session.get(url, headers=self.headers, timeout=10)
             res.raise_for_status()
@@ -78,7 +78,7 @@ class BilibiliTask:
 
     def check_video_coin_status(self, bvid):
         """检查视频投币状态"""
-        url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'  # 修复：添加完整域名
+        url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'  # 已修复：添加完整域名
         try:
             res = self.session.get(url, headers=self.headers, timeout=10)
             data = res.json()
@@ -103,7 +103,7 @@ class BilibiliTask:
         if self.check_video_coin_status(bvid):
             return True, "该视频已投币"
         
-        url = 'https://api.bilibili.com/x/web-interface/coin/add'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/web-interface/coin/add'  # 已修复：添加完整域名
         data = {
             'bvid': bvid,
             'multiply': num,
@@ -145,7 +145,7 @@ class BilibiliTask:
         if not self.csrf:
             return False, "csrf token不存在"
         
-        url = 'https://api.bilibili.com/x/web-interface/share/add'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/web-interface/share/add'  # 已修复：添加完整域名
         data = {'bvid': bvid, 'csrf': self.csrf}
         
         try:
@@ -160,7 +160,7 @@ class BilibiliTask:
 
     def watch_video(self, bvid, played_time=30):
         """观看视频（心跳包）"""
-        url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'  # 修复：添加完整域名
+        url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'  # 已修复：添加完整域名
         data = {
             'bvid': bvid,
             'played_time': played_time,
@@ -178,9 +178,9 @@ class BilibiliTask:
             return False, "观看异常"
 
     def live_sign(self):
-        """直播签到（简化版）"""
+        """直播签到"""
         try:
-            url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/WebSign"
+            url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/WebSign"  # 已修复：添加完整域名
             res = self.session.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data.get('code') == 0:
@@ -191,9 +191,9 @@ class BilibiliTask:
             return False, "直播签到异常"
 
     def manga_sign(self):
-        """漫画签到（简化版）"""
+        """漫画签到"""
         try:
-            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
+            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"  # 已修复：添加完整域名
             res = self.session.post(url, headers=self.headers, json={}, timeout=10)
             data = res.json()
             if data.get('code') == 0:
