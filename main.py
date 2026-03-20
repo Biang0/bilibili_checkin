@@ -21,16 +21,22 @@ def mask_string(s: str):
         return "*"
     return s[0] + "*" * (len(s) - 1)
 
+# ===================== ✅ 核心修复：完全模仿别人的精准逻辑 =====================
 def execute_coin_task(bili, user_info, config):
     try:
         task_info = bili.get_task_info()
         coin_exp = task_info.get("coin_exp", 0)
-        today_coin = coin_exp // 10
+        today_coin = coin_exp // 10  # 1投币=10经验
     except Exception as e:
         logger.error(f"获取投币记录失败: {e}")
+        coin_exp = 0
         today_coin = 0
 
     logger.info(f"今日已投币：{today_coin}/5")
+
+    # ===================== 【关键】和别人代码一样：满50经验直接跳过 =====================
+    if coin_exp >= 50:
+        return True, f"今日已投满5个，无需重复投"
 
     try:
         want_coin = int(config.get('COIN_ADD_NUM', 5))
@@ -40,6 +46,7 @@ def execute_coin_task(bili, user_info, config):
     if want_coin <= 0:
         return True, f"已设置不投币(COIN_ADD_NUM=0)，今日已投{today_coin}/5"
 
+    # 只投差额
     need = min(want_coin, 5 - today_coin)
     need = max(need, 0)
 
@@ -67,13 +74,9 @@ def execute_coin_task(bili, user_info, config):
             success += 1
 
     total = today_coin + success
+    return True, f"本次投{success}个，累计{total}/5"
 
-    if today_coin >= 5:
-        return True, f"今日已投满5个，无需重复投"
-    elif need == 0:
-        return True, f"无需投币，今日已投{today_coin}/5"
-    else:
-        return True, f"本次投{success}个，累计{total}/5"
+# ================================================================================
 
 def run_all_tasks_for_account(bili, config):
     user_info = bili.get_user_info()
