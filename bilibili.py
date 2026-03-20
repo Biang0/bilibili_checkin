@@ -19,7 +19,7 @@ class BilibiliTask:
                 return item.split('=')[1]
         return None
 
-    # ====================== 修复：仅统计今日投币经验 ======================
+    # ====================== 最终修复：今日投币统计 + 时间戳字符串兼容 ======================
     def get_task_info(self):
         try:
             res = requests.get("https://api.bilibili.com/x/member/web/exp/log", headers=self.headers, timeout=8)
@@ -28,7 +28,7 @@ class BilibiliTask:
                 logger.warning(f"获取经验日志失败: {data.get('message')}")
                 return {"coin_exp": 0}
 
-            # 获取今日北京时间的日期（忽略时分秒）
+            # 获取今日北京时间
             beijing_tz = timezone(timedelta(hours=8))
             today_date = datetime.now(beijing_tz).date()
 
@@ -36,13 +36,17 @@ class BilibiliTask:
             for item in data.get("data", {}).get("list", []):
                 reason = item.get("reason", "")
                 if "投币" in reason:
-                    # 解析记录时间（B站API通常返回秒级时间戳）
                     ts = item.get("time")
                     if ts:
-                        item_date = datetime.fromtimestamp(ts, tz=beijing_tz).date()
-                        # 仅累加今日的投币经验
-                        if item_date == today_date:
-                            coin_exp += item.get("delta", 0)
+                        try:
+                            # 修复核心：强制转换为整数，解决字符串报错
+                            ts_int = int(ts)
+                            item_date = datetime.fromtimestamp(ts_int, tz=beijing_tz).date()
+                            if item_date == today_date:
+                                coin_exp += item.get("delta", 0)
+                        except (ValueError, TypeError):
+                            # 异常时间戳直接跳过，不报错
+                            continue
             return {"coin_exp": coin_exp}
         except Exception as e:
             logger.error(f"解析投币经验异常: {e}")
@@ -100,14 +104,11 @@ class BilibiliTask:
         except Exception:
             return False
 
-    # ====================== 优化：投币自动判断上限（每日最多5个） ======================
     def add_coin(self, bvid, num=1, select_like=1):
         if not self.csrf:
             return False, "Bili_jct(csrf) 未找到"
-        # 判断投币上限 50经验 = 5个硬币
         if self.get_task_info()["coin_exp"] >= 50:
             return True, "今日投币已达上限(5个)"
-        # 判断是否已投币
         if self.check_video_coin_status(bvid):
             return True, "该视频已投币"
             
@@ -159,10 +160,8 @@ class BilibiliTask:
         except Exception as e:
             return False, str(e)
 
-    # ====================== 替换：稳定版漫画签到（核心修改） ======================
     def manga_sign(self):
         try:
-            # 复制请求头，单独修改漫画专属Referer，解决接口报错
             headers = self.headers.copy()
             headers['Referer'] = "https://manga.bilibili.com/"
             url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
@@ -170,7 +169,6 @@ class BilibiliTask:
             data = res.json()
             if data.get("code") == 0:
                 return True, "漫画签到成功"
-            # 兼容已签到提示
             elif "clockIn" in str(data) or data.get("code") in [-1, 1]:
                 return True, "漫画今日已签到"
             else:
