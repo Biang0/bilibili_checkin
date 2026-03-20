@@ -1,8 +1,3 @@
-现在，修改主程序中的 `execute_coin_task` 函数，使用修复后的 `get_task_info()` 方法：
-
-<yb_canvas uuid="fixed-main-task" mversion="2" type="code" subtype="single">
-<filename>main.py</filename>
-<yb_code lang="python"><![CDATA[  ```python
 import os
 import sys
 import time
@@ -14,24 +9,28 @@ import requests
 import json
 
 class BeijingFormatter:
+    """自定义日志格式化器，显示北京时间"""
     @staticmethod
     def format(record):
         dt = datetime.fromtimestamp(record["time"].timestamp(), tz=timezone.utc)
-        local_dt = dt + timedelta(hours=8)
+        local_dt = dt + timedelta(hours=8)  # UTC+8
         record["extra"]["local_time"] = local_dt.strftime('%H:%M:%S,%f')[:-3]
         return "{time:YYYY-MM-DD HH:mm:ss,SSS}(CST {extra[local_time]}) - {level} - {message}\n"
 
+# 配置日志输出
 logger.remove()
 logger.add(sys.stdout, format=BeijingFormatter.format, level="INFO", colorize=True)
 
 def mask_string(s: str):
+    """敏感信息脱敏，只显示第一个字符"""
     if not isinstance(s, str) or len(s) == 0:
         return "*"
     return s[0] + "*" * (len(s) - 1)
 
 def execute_coin_task(bili, user_info, config):
     """
-    优化的投币逻辑：先读取今日已投币数量，避免重复投币
+    执行投币任务
+    核心逻辑：先检查今日已投币数量，避免重复投币
     """
     # 1. 获取今日已投币信息
     try:
@@ -126,7 +125,7 @@ def execute_coin_task(bili, user_info, config):
         else:
             logger.warning(f"❌ 投币失败: {msg}")
         
-        time.sleep(random.uniform(1, 2))
+        time.sleep(random.uniform(1, 2))  # 随机延迟，避免请求过于频繁
     
     # 9. 返回结果
     if success > 0:
@@ -137,6 +136,7 @@ def execute_coin_task(bili, user_info, config):
         return True, "无需投币或已投满"
 
 def run_all_tasks_for_account(bili, config):
+    """执行单个账号的所有任务"""
     user_info = bili.get_user_info()
     if not user_info:
         return {'登录检查': (False, 'Cookie 失效')}, None
@@ -147,8 +147,9 @@ def run_all_tasks_for_account(bili, config):
     
     tasks_result = {}
     video_list = bili.get_dynamic_videos()
-    bvid = video_list[0] if video_list else "BV1GJ411x7h7"
+    bvid = video_list[0] if video_list else "BV1GJ411x7h7"  # 默认视频ID
     
+    # 执行各项任务
     logger.info("--- 开始执行分享任务 ---")
     tasks_result['分享视频'] = bili.share_video(bvid)
     
@@ -167,6 +168,7 @@ def run_all_tasks_for_account(bili, config):
     return tasks_result, user_info
 
 def format_push_message(all_results):
+    """格式化推送消息为Markdown格式"""
     content = ["### Bilibili 任务报告\n"]
     for result in all_results:
         user_info = result.get('user_info')
@@ -192,6 +194,7 @@ def format_push_message(all_results):
     return "\n".join(content)
 
 def send_to_pushplus(token, title, content):
+    """发送推送消息到PushPlus"""
     if not token:
         logger.warning("未配置 PushPlus，跳过推送")
         return
@@ -207,6 +210,7 @@ def send_to_pushplus(token, title, content):
         logger.error(f"PushPlus 异常: {e}")
 
 def send_to_telegram(bot_token, chat_id, content):
+    """发送推送消息到Telegram"""
     if not bot_token or not chat_id:
         logger.warning("TG 未配置，跳过推送")
         return
@@ -228,10 +232,12 @@ def send_to_telegram(bot_token, chat_id, content):
         logger.error(f"TG 异常: {e}")
 
 def main():
+    """主函数"""
+    # 从环境变量读取配置
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
-        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),
-        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),  # 默认投5个币
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),  # 默认投币时点赞
         "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN", ""),
         "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN", ""),
         "TG_CHAT_ID": os.environ.get("TG_CHAT_ID", ""),
@@ -241,11 +247,13 @@ def main():
         logger.error("未配置 BILIBILI_COOKIE")
         sys.exit(1)
 
+    # 支持多账号，用###分隔
     cookies = [c.strip() for c in config["BILIBILI_COOKIE"].split("###") if c.strip()]
     all_results = []
     
     logger.info(f"检测到 {len(cookies)} 个账号")
 
+    # 为每个账号执行任务
     for idx, cookie in enumerate(cookies, 1):
         logger.info(f"\n{'='*40}")
         logger.info(f"开始处理账号{idx}/{len(cookies)}")
@@ -260,6 +268,7 @@ def main():
             'tasks': tasks
         })
 
+        # 输出本账号任务结果
         logger.info(f"\n账号{idx} 任务结果:")
         for name, (ok, info) in tasks.items():
             status = "✅ 成功" if ok else "❌ 失败"
@@ -269,11 +278,13 @@ def main():
         logger.info(f"账号{idx} 任务完成")
         logger.info(f"{'='*40}\n")
         
+        # 账号间延迟，避免请求过于频繁
         if idx < len(cookies):
             delay = random.uniform(3, 6)
             logger.info(f"等待 {delay:.1f} 秒后处理下一个账号...")
             time.sleep(delay)
 
+    # 生成并发送报告
     if all_results:
         final_msg = format_push_message(all_results)
         logger.info("\n" + "="*50)
