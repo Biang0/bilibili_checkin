@@ -26,43 +26,55 @@ def execute_coin_task(bili, user_info, config):
         task_info = bili.get_task_info()
         coin_exp = task_info.get("coin_exp", 0)
         today_coin = coin_exp // 10
-    except:
+    except Exception as e:
+        logger.error(f"获取投币记录失败: {e}")
         today_coin = 0
 
+    logger.info(f"今日已投币：{today_coin}/5")
+
+    # 读取用户设置的每日投币数量
+    try:
+        want_coin = int(config.get('COIN_ADD_NUM', 5))
+    except:
+        want_coin = 5
+
+    # 用户设置 0 个：直接不投
+    if want_coin <= 0:
+        return True, f"已设置不投币(COIN_ADD_NUM=0)，今日已投{today_coin}/5"
+
+    # 已投满，跳过
     if today_coin >= 5:
         return True, f"今日已投{today_coin}/5 → 跳过"
 
-    # 修复：安全获取配置，防止空字符串报错
-    try:
-        max_coin = int(config.get('COIN_ADD_NUM', 5))
-    except:
-        max_coin = 5
-        
-    need_coin = min(max_coin, 5 - today_coin)
-    if need_coin <= 0:
-        return True, f"今日已投{today_coin}/5"
+    # 只投差额
+    need = min(want_coin, 5 - today_coin)
 
+    # 硬币余额判断
     balance = user_info.get("money", 0)
-    if balance < need_coin:
-        return False, f"硬币不足，需要{need_coin}个"
+    if balance < need:
+        return False, f"硬币不足，当前{balance}个，需{need}个"
 
     video_list = bili.get_dynamic_videos()
     if not video_list:
         return False, "获取视频失败"
 
-    added = 0
+    try:
+        select_like = int(config.get('COIN_SELECT_LIKE', 1))
+    except:
+        select_like = 1
+
+    success = 0
     for bvid in video_list:
-        if added >= need_coin:
+        if success >= need:
             break
-        # 修复：安全获取点赞配置
-        try:
-            select_like = int(config.get('COIN_SELECT_LIKE', 1))
-        except:
-            select_like = 1
+        if bili.check_video_coin_status(bvid):
+            continue
         ok, msg = bili.add_coin(bvid, 1, select_like)
         if ok:
-            added += 1
-    return True, f"已投{today_coin + added}/5（今日经验{coin_exp}）"
+            success += 1
+
+    total = today_coin + success
+    return True, f"本次投{success}个，累计{total}/5"
 
 def run_all_tasks_for_account(bili, config):
     user_info = bili.get_user_info()
@@ -82,12 +94,8 @@ def run_all_tasks_for_account(bili, config):
 
     return tasks_result, user_info
 
-# ==============================
-# 统一美化推送格式（两边完全一样）
-# ==============================
 def format_push_message(all_results):
     content = ["### Bilibili 任务报告\n"]
-    
     for result in all_results:
         user_info = result.get('user_info')
         if user_info:
@@ -101,18 +109,13 @@ def format_push_message(all_results):
             status_icon = "✅" if success else "❌"
             reason = f" - {message}" if message else ""
             content.append(f"- **{name}**: {status_icon}{reason}")
-            
         if user_info:
             content.append(f"- **硬币余额**: {user_info['money']}")
-    
+
     beijing_time = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
     content.append(f"\n> 报告时间: {beijing_time}")
-    
     return "\n".join(content)
 
-# ==============================
-# PushPlus 推送
-# ==============================
 def send_to_pushplus(token, title, content):
     if not token:
         logger.warning("未配置 PushPlus，跳过推送")
@@ -126,16 +129,12 @@ def send_to_pushplus(token, title, content):
         else:
             logger.error(f'❌ PushPlus 推送失败: {res.json().get("msg", "未知错误")}')
     except Exception as e:
-        logger.error(f'PushPlus 推送异常: {e}')
+        logger.error(f'PushPlus 异常: {e}')
 
-# ==============================
-# Telegram 推送
-# ==============================
 def send_to_telegram(bot_token, chat_id, content):
     if not bot_token or not chat_id:
         logger.warning("TG 未配置，跳过推送")
         return
-    
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     data = {
         "chat_id": chat_id,
@@ -143,25 +142,21 @@ def send_to_telegram(bot_token, chat_id, content):
         "parse_mode": "Markdown",
         "disable_web_page_preview": True
     }
-    
     try:
         response = requests.post(url, data=data, timeout=10)
         result = response.json()
         if result.get("ok"):
             logger.info("✅ Telegram 推送成功！")
         else:
-            logger.error(f"❌ Telegram 推送失败: {result.get('description')}")
+            logger.error(f"❌ TG 推送失败: {result.get('description')}")
     except Exception as e:
-        logger.error(f"Telegram 推送异常: {e}")
+        logger.error(f"TG 异常: {e}")
 
-# ==============================
-# 主函数（已统一推送）
-# ==============================
 def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
-        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM") or "5",  # 修复：空值默认5
-        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE") or "1",  # 修复：空值默认1
+        "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM") or "5",
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE") or "1",
         "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN"),
         "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN"),
         "TG_CHAT_ID": os.environ.get("TG_CHAT_ID"),
@@ -187,13 +182,9 @@ def main():
 
         for name, (ok, info) in tasks.items():
             logger.info(f"[账号{idx}] {name}：{'成功' if ok else '失败'} | {info}")
-
         logger.info("=== 任务完成 ===\n")
 
-    # 生成统一的漂亮报告
     final_msg = format_push_message(all_results)
-
-    # 两个推送内容完全一样
     send_to_pushplus(config["PUSH_PLUS_TOKEN"], "Bilibili 任务报告", final_msg)
     send_to_telegram(config["TG_BOT_TOKEN"], config["TG_CHAT_ID"], final_msg)
 
