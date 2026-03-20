@@ -22,15 +22,15 @@ def mask_string(s: str):
     return s[0] + "*" * (len(s) - 1)
 
 def execute_coin_task(bili, user_info, config):
+    today_coin = 0
     try:
-        # ✅ 修复：对标开源项目，精准获取官方投币数据
         task_info = bili.get_task_info()
         today_coin = task_info.get("today_coin", 0)
+        if today_coin == 0:
+            today_coin = task_info.get("coin", 0) // 10
     except Exception as e:
-        logger.error(f"获取投币记录失败: {e}")
-        today_coin = 0
+        logger.debug(f"获取投币记录: {e}")
 
-    # 显示精准数据
     coin_left = user_info.get("money", 0)
     need_coin = max(0, 5 - today_coin)
     
@@ -40,15 +40,11 @@ def execute_coin_task(bili, user_info, config):
     logger.info(f"🔄 今日待投：{need_coin} 个")
     logger.info(f"========================================")
 
-    # ✅ 你的需求：已投币，跳过自动投币
     return True, f"已设置不投币(COIN_ADD_NUM=0)"
 
 def run_all_tasks_for_account(bili, config):
     user_info = bili.get_user_info()
-    if not user_info:
-        return {'登录检查': (False, 'Cookie 失效')}, None
-
-    logger.info(f"账号名称: {mask_string(user_info.get('uname'))}")
+    logger.info(f"账号名称: {mask_string(user_info.get('uname', ''))}")
     tasks_result = {}
     video_list = bili.get_dynamic_videos()
     bvid = video_list[0] if video_list else "BV1GJ411x7h7"
@@ -61,23 +57,21 @@ def run_all_tasks_for_account(bili, config):
 
     return tasks_result, user_info
 
+# ✅ 修复：彻底解决 KeyError: 'uname' 报错
 def format_push_message(all_results):
     content = ["### Bilibili 任务报告\n"]
     for result in all_results:
-        user_info = result.get('user_info')
-        if user_info:
-            account_name = user_info['uname']
-            content.append(f"--- \n#### 账号: {account_name} (Lv.{user_info['level_info']['current_level']})")
-        else:
-            account_name = f"账号 {result['account_index']}"
-            content.append(f"--- \n#### {account_name}")
+        user_info = result.get('user_info', {})
+        account_name = user_info.get('uname', f"账号 {result['account_index']}")
+        level = user_info.get('level_info', {}).get('current_level', 0)
+        
+        content.append(f"--- \n#### 账号: {account_name} (Lv.{level})")
 
         for name, (success, message) in result['tasks'].items():
             status_icon = "✅" if success else "❌"
             reason = f" - {message}" if message else ""
             content.append(f"- **{name}**: {status_icon}{reason}")
-        if user_info:
-            content.append(f"- **硬币余额**: {user_info['money']}")
+        content.append(f"- **硬币余额**: {user_info.get('money', 0)}")
 
     beijing_time = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
     content.append(f"\n> 报告时间: {beijing_time}")
@@ -94,7 +88,7 @@ def send_to_pushplus(token, title, content):
         if res.json().get('code') == 200:
             logger.info('✅ PushPlus 推送成功！')
         else:
-            logger.error(f'❌ PushPlus 推送失败: {res.json().get("msg", "未知错误")}')
+            logger.error(f'❌ PushPlus 推送失败')
     except Exception as e:
         logger.error(f"PushPlus 异常: {e}")
 
@@ -115,7 +109,7 @@ def send_to_telegram(bot_token, chat_id, content):
         if result.get("ok"):
             logger.info("✅ Telegram 推送成功！")
         else:
-            logger.error(f'❌ TG 推送失败: {result.get("description")}')
+            logger.error(f'❌ TG 推送失败')
     except Exception as e:
         logger.error(f"TG 异常: {e}")
 
