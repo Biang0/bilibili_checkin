@@ -9,28 +9,20 @@ class BilibiliTask:
     def __init__(self, cookie):
         self.cookie = cookie
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/',
             'Cookie': cookie
         }
         self.csrf = self._get_csrf()
-        self.session = requests.Session()
-        self.session.headers.update(self.headers)
 
     def _get_csrf(self):
         for item in self.cookie.split(';'):
             if item.strip().startswith('bili_jct'):
                 return item.split('=')[1]
-        logger.error("未找到bili_jct，csrf token获取失败")
         return None
 
     def get_task_info(self):
-        """
-        修复版：获取今日投币任务信息。
-        正确解析经验日志中的时间字符串，计算今日获得的投币经验。
-        返回格式: {"today_coin": 今日已投硬币数, "coin_exp": 今日投币获得的总经验值}
-        """
         try:
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz)
@@ -41,8 +33,8 @@ class BilibiliTask:
             max_page = 5
 
             while page <= max_page:
-                url = f"https://api.bilibili.com/x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
-                res = self.session.get(url, timeout=10)
+                url = f"https:///x/member/web/exp/log?jsonp=jsonp&pn={page}&ps=30"
+                res = requests.get(url, headers=self.headers, timeout=10)
                 data = res.json()
 
                 if data.get("code") != 0 or not data.get("data", {}).get("list"):
@@ -62,7 +54,6 @@ class BilibiliTask:
                                 timestamp = int(time_str)
                                 item_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
                             except ValueError:
-                                logger.debug(f"无法解析的时间格式，已跳过: {time_str}")
                                 continue
                         
                         if item_time.tzinfo is None:
@@ -71,206 +62,186 @@ class BilibiliTask:
                         
                         if item_time_beijing.date() < today_start.date():
                             today_coin = coin_exp // 10
-                            logger.info(f"从经验日志解析：今日已投币 {today_coin} 个（获得 {coin_exp} 经验）")
                             return {"today_coin": today_coin, "coin_exp": coin_exp}
                         
                         reason = item.get("reason", "")
                         exp = int(item.get("delta", 0))
                         if "投币" in reason and exp > 0:
                             coin_exp += exp
-                            logger.debug(f"记录到投币经验: {time_str}, 原因: {reason}, 经验值: {exp}")
 
-                    except Exception as e:
-                        logger.warning(f"解析经验日志单条记录时出错（已跳过）: {e}")
+                    except Exception:
                         continue
                 page += 1
 
             today_coin = coin_exp // 10
-            logger.info(f"经验日志解析完成：今日已投币 {today_coin} 个（获得 {coin_exp} 经验）")
             return {"today_coin": today_coin, "coin_exp": coin_exp}
 
         except Exception as e:
-            logger.error(f"获取投币任务信息过程发生异常: {e}")
             return {"today_coin": 0, "coin_exp": 0}
 
     def get_coin_balance(self):
-        url = 'https://api.bilibili.com/x/web-interface/nav'
+        url = 'https:///x/web-interface/nav'
         try:
-            res = self.session.get(url, timeout=10)
-            res.raise_for_status()
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data.get('code') == 0:
-                coins = data.get('data', {}).get('money', 0)
-                logger.debug(f"获取硬币余额成功: {coins}个")
-                return coins
+                return data.get('data', {}).get('money', 0)
             return 0
-        except Exception as e:
-            logger.error(f"获取硬币余额异常: {e}")
+        except Exception:
             return 0
 
     def get_user_info(self):
-        url = 'https://api.bilibili.com/x/web-interface/nav'
+        url = 'https:///x/web-interface/nav'
         try:
-            res = self.session.get(url, timeout=10)
-            res.raise_for_status()
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data.get('code') == 0:
                 return data.get('data', {})
             return None
-        except Exception as e:
-            logger.error(f"获取用户信息异常: {e}")
+        except Exception:
             return None
 
     def get_dynamic_videos(self):
-        url = 'https://api.bilibili.com/x/web-interface/dynamic/region?ps=10&rid=1'
+        url = 'https:///x/web-interface/dynamic/region?ps=5&rid=1'
         try:
-            res = self.session.get(url, timeout=10)
-            res.raise_for_status()
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data.get('code') == 0:
-                videos = [video.get('bvid') for video in data.get('data', {}).get('archives', [])]
-                logger.debug(f"获取到{len(videos)}个动态视频")
-                return videos
+                return [video.get('bvid') for video in data.get('data', {}).get('archives', [])]
             return []
-        except Exception as e:
-            logger.error(f"获取动态视频异常: {e}")
+        except Exception:
+            return []
+
+    def get_ranking_videos(self):
+        url = 'https:///x/web-interface/ranking/v2?rid=0&type=all'
+        try:
+            res = requests.get(url, headers=self.headers, timeout=10)
+            data = res.json()
+            if data.get('code') == 0:
+                return [video.get('bvid') for video in data.get('data', {}).get('list', [])]
+            return []
+        except Exception:
             return []
 
     def check_video_coin_status(self, bvid):
-        url = f'https://api.bilibili.com/x/web-interface/archive/coins?bvid={bvid}'
+        url = f'https:///x/web-interface/archive/coins?bvid={bvid}'
         try:
-            res = self.session.get(url, timeout=10)
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             if data.get('code') == 0:
-                has_coined = data.get('data', {}).get('multiply', 0) > 0
-                return has_coined
+                return data.get('data', {}).get('multiply', 0) > 0
             return False
-        except Exception as e:
-            logger.error(f"检查视频投币状态异常: {e}")
+        except Exception:
             return False
 
     def add_coin(self, bvid, num=1, select_like=1, max_retry=2):
-        if not self.csrf:
-            return False, "csrf token不存在"
+        if not self.csrf: 
+            return False, "Bili_jct(csrf) 未找到"
         
-        if self.check_video_coin_status(bvid):
-            return True, "该视频已投币"
-        
-        url = 'https://api.bilibili.com/x/web-interface/coin/add'
-        data = {
-            'bvid': bvid,
-            'multiply': num,
-            'select_like': select_like,
-            'csrf': self.csrf
-        }
+        url = 'https:///x/web-interface/coin/add'
+        data = {'bvid': bvid, 'multiply': num, 'select_like': select_like, 'csrf': self.csrf}
         
         for attempt in range(max_retry):
             try:
-                res = self.session.post(url, data=data, timeout=10)
-                data_res = res.json()
+                res = requests.post(url, headers=self.headers, data=data, timeout=10)
+                response_data = res.json()
                 
-                if data_res.get('code') == 0:
-                    logger.info(f"投币成功: {bvid}")
+                if response_data.get('code') == 0:
                     return True, "投币成功"
-                elif data_res.get('code') == 34005:
+                elif response_data.get('code') == 34005:
                     return True, "今日投币已达上限"
-                elif data_res.get('code') == 34004:
+                elif response_data.get('code') == 34004:
                     return False, "硬币不足"
                 else:
-                    error_msg = data_res.get('message', f"错误代码: {data_res.get('code')}")
                     if attempt < max_retry - 1:
                         time.sleep(1)
                         continue
-                    return False, error_msg
-                    
+                    return False, response_data.get('message', '投币失败')
             except Exception as e:
                 if attempt < max_retry - 1:
                     time.sleep(1)
                     continue
-                logger.error(f"投币请求异常: {e}")
-                return False, "请求失败"
+                return False, str(e)
         
         return False, "重试后仍失败"
 
     def share_video(self, bvid):
-        """修复的分享视频功能 - 最小化修改"""
-        if not self.csrf:
-            return False, "csrf token不存在"
+        """基于原始代码逻辑修复的分享功能"""
+        if not self.csrf: 
+            return False, "Bili_jct(csrf) 未找到"
         
-        url = 'https://api.bilibili.com/x/web-interface/share/add'
+        # 使用原始代码的URL格式
+        url = 'https:///x/web-interface/share/add'
         data = {'bvid': bvid, 'csrf': self.csrf}
         
         try:
-            res = self.session.post(url, data=data, timeout=10)
-            data_res = res.json()
-            if data_res.get('code') == 0:
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            
+            # 原始代码逻辑：只检查code==0
+            if data.get('code') == 0:
                 return True, "分享成功"
-            elif data_res.get('code') == 87013:
+            
+            # 但根据B站API，添加常见错误码处理
+            elif data.get('code') == 87013:
                 return True, "今日已分享"
-            return False, f"分享失败: {data_res.get('message', '未知错误')}"
+            elif data.get('code') == -101:
+                return False, "Cookie失效，请重新登录"
+            
+            return False, data.get('message', '分享失败')
         except Exception as e:
-            logger.error(f"分享视频异常: {e}")
-            return False, "分享异常"
+            return False, str(e)
 
     def watch_video(self, bvid, played_time=30):
-        """修复的观看视频功能 - 最小化修改"""
-        url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'
-        data = {
-            'bvid': bvid,
-            'played_time': played_time,
-            'csrf': self.csrf
-        }
+        """基于原始代码逻辑修复的观看功能"""
+        if not self.csrf:
+            return False, "观看需要csrf token"
+        
+        # 使用原始代码的URL格式
+        url = 'https:///x/click-interface/web/heartbeat'
+        data = {'bvid': bvid, 'played_time': played_time, 'csrf': self.csrf}
         
         try:
-            res = self.session.post(url, data=data, timeout=10)
-            data_res = res.json()
-            if data_res.get('code') == 0:
+            res = requests.post(url, headers=self.headers, data=data, timeout=10)
+            data = res.json()
+            
+            # 原始代码逻辑：只检查code==0
+            if data.get('code') == 0:
                 return True, "观看成功"
-            elif data_res.get('code') in [87014, 87015]:
-                return True, "观看已记录"
-            return False, f"观看失败: {data_res.get('message', '未知错误')}"
+            
+            # 但根据B站API，添加常见错误码处理
+            elif data.get('code') in [87014, 87015]:
+                return True, "已记录观看"
+            elif data.get('code') == -101:
+                return False, "Cookie失效，请重新登录"
+            
+            return False, data.get('message', '观看失败')
         except Exception as e:
-            logger.error(f"观看视频异常: {e}")
-            return False, "观看异常"
+            return False, str(e)
 
     def live_sign(self):
-        """修复的直播签到功能 - 最小化修改"""
+        """基于原始代码逻辑修复的直播签到"""
+        url = 'https:///xlive/web-ucenter/v1/sign/DoSign'
         try:
-            url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign"
-            
-            res = self.session.get(url, timeout=10)
+            res = requests.get(url, headers=self.headers, timeout=10)
             data = res.json()
             
             if data.get('code') == 0:
-                return True, "直播签到成功"
+                return True, data.get('data', {}).get('text', '直播签到成功')
             elif data.get('code') == 1011040:
                 return True, "今日已签到"
-            return False, f"直播签到失败: {data.get('message', '未知错误')}"
-                
+            return False, data.get('message', '直播签到失败')
         except Exception as e:
-            logger.error(f"直播签到异常: {e}")
-            return False, "直播签到异常"
+            return False, str(e)
 
     def manga_sign(self):
-        """漫画签到功能 - 保持原样"""
+        """漫画签到 - 保持原始代码完全不变"""
+        url = 'https:///twirp/activity.v1.Activity/ClockIn'
         try:
-            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
-            headers = {
-                'User-Agent': self.headers['User-Agent'],
-                'Content-Type': 'application/json; charset=utf-8',
-                'Cookie': self.cookie
-            }
-            
-            res = self.session.post(url, headers=headers, json={'platform': 'ios'}, timeout=10)
-            res_data = res.json()
-            
-            if res_data.get('code') == 0:
+            res = requests.post(url, headers=self.headers, data={'platform': 'ios'})
+            data = res.json()
+            if data.get('code') == 0:
                 return True, "漫画签到成功"
-            elif res_data.get('code') == 1:
-                return True, "今日已签到"
-            else:
-                return False, f"漫画签到失败: {res_data.get('msg', '未知错误')}"
-                
+            return False, data.get('message', '漫画签到失败')
         except Exception as e:
-            logger.error(f"漫画签到异常: {e}")
-            return False, "漫画签到异常"
+            return False, str(e)
