@@ -250,28 +250,20 @@ class BilibiliTask:
             return False, "直播签到异常"
 
     def manga_sign(self):
+        """
+        漫画签到 - 按照原生代码格式
+        注意：使用data参数而不是json参数
+        """
+        url = 'https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn'
         try:
-            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
-            headers = {
-                'User-Agent': self.headers['User-Agent'],
-                'Content-Type': 'application/json; charset=utf-8',
-                'Cookie': self.cookie
-            }
-            
-            data = {
-                'platform': 'ios'
-            }
-            
-            res = self.session.post(url, headers=headers, json=data, timeout=10)
-            res_data = res.json()
-            
-            if res_data.get('code') == 0:
+            # 注意：这里使用data参数，而不是json参数
+            res = self.session.post(url, headers=self.headers, data={'platform': 'ios'}, timeout=10)
+            data = res.json()
+            if data.get('code') == 0:
                 return True, "漫画签到成功"
-            elif res_data.get('code') == 1:
+            elif data.get('code') == 1:
                 return True, "今日已签到"
-            else:
-                return False, f"漫画签到失败: {res_data.get('msg', '未知错误')}"
-                
+            return False, data.get('message', '漫画签到失败')
         except Exception as e:
             logger.error(f"漫画签到异常: {e}")
-            return False, "漫画签到异常"
+            return False, str(e)
