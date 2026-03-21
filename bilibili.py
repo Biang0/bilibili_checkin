@@ -35,7 +35,7 @@ class BilibiliTask:
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz)
             today_start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=beijing_tz)
-            
+
             coin_exp = 0
             page = 1
             max_page = 5
@@ -53,7 +53,7 @@ class BilibiliTask:
                         time_str = item.get("time")
                         if not time_str:
                             continue
-                        
+
                         item_time = None
                         try:
                             item_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
@@ -64,16 +64,16 @@ class BilibiliTask:
                             except ValueError:
                                 logger.debug(f"无法解析的时间格式，已跳过: {time_str}")
                                 continue
-                        
+
                         if item_time.tzinfo is None:
                             item_time = item_time.replace(tzinfo=timezone.utc)
                         item_time_beijing = item_time.astimezone(beijing_tz)
-                        
+
                         if item_time_beijing.date() < today_start.date():
                             today_coin = coin_exp // 10
                             logger.info(f"从经验日志解析：今日已投币 {today_coin} 个（获得 {coin_exp} 经验）")
                             return {"today_coin": today_coin, "coin_exp": coin_exp}
-                        
+
                         reason = item.get("reason", "")
                         exp = int(item.get("delta", 0))
                         if "投币" in reason and exp > 0:
@@ -152,10 +152,10 @@ class BilibiliTask:
     def add_coin(self, bvid, num=1, select_like=1, max_retry=2):
         if not self.csrf:
             return False, "csrf token不存在"
-        
+
         if self.check_video_coin_status(bvid):
             return True, "该视频已投币"
-        
+
         url = 'https://api.bilibili.com/x/web-interface/coin/add'
         data = {
             'bvid': bvid,
@@ -163,12 +163,12 @@ class BilibiliTask:
             'select_like': select_like,
             'csrf': self.csrf
         }
-        
+
         for attempt in range(max_retry):
             try:
                 res = self.session.post(url, data=data, timeout=10)
                 data_res = res.json()
-                
+
                 if data_res.get('code') == 0:
                     logger.info(f"投币成功: {bvid}")
                     return True, "投币成功"
@@ -182,23 +182,23 @@ class BilibiliTask:
                         time.sleep(1)
                         continue
                     return False, error_msg
-                    
+
             except Exception as e:
                 if attempt < max_retry - 1:
                     time.sleep(1)
                     continue
                 logger.error(f"投币请求异常: {e}")
                 return False, "请求失败"
-        
+
         return False, "重试后仍失败"
 
     def share_video(self, bvid):
         if not self.csrf:
             return False, "csrf token不存在"
-        
+
         url = 'https://api.bilibili.com/x/web-interface/share/add'
         data = {'bvid': bvid, 'csrf': self.csrf}
-        
+
         try:
             res = self.session.post(url, data=data, timeout=10)
             data_res = res.json()
@@ -216,7 +216,7 @@ class BilibiliTask:
             'played_time': played_time,
             'csrf': self.csrf
         }
-        
+
         try:
             res = self.session.post(url, data=data, timeout=10)
             data_res = res.json()
@@ -235,16 +235,16 @@ class BilibiliTask:
                 'Referer': 'https://live.bilibili.com/',
                 'Cookie': self.cookie
             }
-            
+
             res = self.session.get(url, headers=headers, timeout=10)
             data = res.json()
-            
+
             if data.get('code') == 0:
                 return True, data.get('data', {}).get('text', '直播签到成功')
             elif data.get('code') == 1011040:
                 return True, "今日已签到"
             return False, data.get('message', '直播签到失败')
-                
+
         except Exception as e:
             logger.error(f"直播签到异常: {e}")
             return False, "直播签到异常"
@@ -264,6 +264,8 @@ class BilibiliTask:
             elif data.get('code') == 1:
                 return True, "今日已签到"
             return False, data.get('message', '漫画签到失败')
+
+
         except Exception as e:
             logger.error(f"漫画签到异常: {e}")
             return False, str(e)
