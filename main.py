@@ -237,7 +237,7 @@ def main():
     config = {
         "BILIBILI_COOKIE": os.environ.get("BILIBILI_COOKIE"),
         "COIN_ADD_NUM": os.environ.get("COIN_ADD_NUM", 5),  # 默认投5个币
-        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 1),  # 默认投币时点赞
+        "COIN_SELECT_LIKE": os.environ.get("COIN_SELECT_LIKE", 0),  # 默认投币时点赞
         "PUSH_PLUS_TOKEN": os.environ.get("PUSH_PLUS_TOKEN", ""),
         "TG_BOT_TOKEN": os.environ.get("TG_BOT_TOKEN", ""),
         "TG_CHAT_ID": os.environ.get("TG_CHAT_ID", ""),
