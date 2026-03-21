@@ -183,4 +183,95 @@ class BilibiliTask:
                         continue
                     return False, error_msg
                     
-            except Exception a
+            except Exception as e:
+                if attempt < max_retry - 1:
+                    time.sleep(1)
+                    continue
+                logger.error(f"投币请求异常: {e}")
+                return False, "请求失败"
+        
+        return False, "重试后仍失败"
+
+    def share_video(self, bvid):
+        if not self.csrf:
+            return False, "csrf token不存在"
+        
+        url = 'https://api.bilibili.com/x/web-interface/share/add'
+        data = {'bvid': bvid, 'csrf': self.csrf}
+        
+        try:
+            res = self.session.post(url, data=data, timeout=10)
+            data_res = res.json()
+            if data_res.get('code') == 0:
+                return True, "分享成功"
+            return False, f"分享失败: {data_res.get('message', '未知错误')}"
+        except Exception as e:
+            logger.error(f"分享视频异常: {e}")
+            return False, "分享异常"
+
+    def watch_video(self, bvid, played_time=30):
+        url = 'https://api.bilibili.com/x/click-interface/web/heartbeat'
+        data = {
+            'bvid': bvid,
+            'played_time': played_time,
+            'csrf': self.csrf
+        }
+        
+        try:
+            res = self.session.post(url, data=data, timeout=10)
+            data_res = res.json()
+            if data_res.get('code') == 0:
+                return True, "观看成功"
+            return False, f"观看失败: {data_res.get('message', '未知错误')}"
+        except Exception as e:
+            logger.error(f"观看视频异常: {e}")
+            return False, "观看异常"
+
+    def live_sign(self):
+        try:
+            url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/sign/DoSign"
+            headers = {
+                'User-Agent': self.headers['User-Agent'],
+                'Referer': 'https://live.bilibili.com/',
+                'Cookie': self.cookie
+            }
+            
+            res = self.session.get(url, headers=headers, timeout=10)
+            data = res.json()
+            
+            if data.get('code') == 0:
+                return True, data.get('data', {}).get('text', '直播签到成功')
+            elif data.get('code') == 1011040:
+                return True, "今日已签到"
+            return False, data.get('message', '直播签到失败')
+                
+        except Exception as e:
+            logger.error(f"直播签到异常: {e}")
+            return False, "直播签到异常"
+
+    def manga_sign(self):
+        try:
+            url = "https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn"
+            headers = {
+                'User-Agent': self.headers['User-Agent'],
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cookie': self.cookie
+            }
+            
+            data = {
+                'platform': 'ios'
+            }
+            
+            res = self.session.post(url, headers=headers, json=data, timeout=10)
+            res_data = res.json()
+            
+            if res_data.get('code') == 0:
+                return True, "漫画签到成功"
+            elif res_data.get('code') == 1:
+                return True, "今日已签到"
+            else:
+                return False, f"漫画签到失败: {res_data.get('msg', '未知错误')}"
+                
+        except Exception as e:
+            logger.error(f"漫画签到异常: {e}")
+            return False, "漫画签到异常"
