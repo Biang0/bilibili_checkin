@@ -1,29 +1,28 @@
 # ==============================================
 #  B站每日自动签到 + 自动清日志 + 15天保活
 #  时间：每天 凌晨 00:00（北京时间）
-#  支持：PushPlus + Telegram 双推送
+# 支持国内IP，解决B站异地登录问题
 # ==============================================
 name: Bilibili每日签到+清日志+15天保活
 
 on:
   schedule:
-    - cron: '0 16 * * *'         # 每天凌晨0点执行签到（UTC+8 00:00）
-  workflow_dispatch:             # 手动触发（仅执行签到+清日志，不保活）
+    - cron: '0 16 * * *'
+  workflow_dispatch:
 
 jobs:
-  # ==============================================
-  #  任务1：B站自动签到 + 双推送
-  # ==============================================
   bilibili-task:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
 
     steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
+      - uses: actions/checkout@v4
+
+      - name: 设置国内代理（解决B站异地IP问题）
+        run: |
+          echo "HTTP_PROXY=http://104.156.143.51:3128" >> $GITHUB_ENV
+          echo "HTTPS_PROXY=http://104.156.143.51:3128" >> $GITHUB_ENV
+          echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
 
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
@@ -35,7 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests loguru
 
-      - name: 执行B站签到任务（PushPlus+TG双推送）
+      - name: 执行B站签到任务
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
           PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
@@ -45,16 +44,12 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python main.py
 
-  # ==============================================
-  #  任务2：自动清理所有运行日志（已修复无报错）
-  # ==============================================
+  # ==================== 清理日志（不动） ====================
   clean-logs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
-      contents: read
     needs: bilibili-task
-
     steps:
       - name: 清理旧运行记录
         uses: Mattraks/delete-workflow-runs@v2
@@ -64,23 +59,18 @@ jobs:
           retain_days: 0
           keep_minimum_runs: 1
 
-  # ==============================================
-  #  任务3：15天保活（只在定时触发时运行，手动触发不执行）
-  # ==============================================
+  # ==================== 15天保活（不动） ====================
   keepalive:
     runs-on: ubuntu-latest
     needs: clean-logs
     if: github.event_name == 'schedule'
-
     steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: 自动保活提交
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "🔄 15天自动保活 - 维持仓库活跃"
+          git commit --allow-empty -m "🔄 15天自动保活"
           git push
