@@ -1,40 +1,41 @@
 # ==============================================
 #  B站每日自动签到 + 自动清日志 + 15天保活
 #  时间：每天 凌晨 00:00（北京时间）
-# 支持国内IP，解决B站异地登录问题
+#  支持：PushPlus + Telegram 双推送
 # ==============================================
 name: Bilibili每日签到+清日志+15天保活
 
 on:
   schedule:
-    - cron: '0 16 * * *'
-  workflow_dispatch:
+    - cron: '0 16 * * *'         # 每天凌晨0点执行签到（UTC+8 00:00）
+  workflow_dispatch:             # 手动触发（仅执行签到+清日志，不保活）
 
 jobs:
+  # ==============================================
+  #  任务1：B站自动签到 + 双推送（已修复：无代理超时）
+  # ==============================================
   bilibili-task:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: 设置国内代理（解决B站异地IP问题）
-        run: |
-          echo "HTTP_PROXY=http://104.156.143.51:3128" >> $GITHUB_ENV
-          echo "HTTPS_PROXY=http://104.156.143.51:3128" >> $GITHUB_ENV
-          echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 安装依赖（正常安装，无代理）
         run: |
           python -m pip install --upgrade pip
           pip install requests loguru
 
-      - name: 执行B站签到任务
+      - name: 执行B站签到（仅B站走国内代理，不影响pip）
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
           PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
@@ -42,14 +43,19 @@ jobs:
           COIN_SELECT_LIKE: ${{ secrets.COIN_SELECT_LIKE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          # 👇 关键：只给B站用代理，pip不受影响
+          PROXY_HOST: "http://183.222.115.134:8888"
         run: python main.py
 
-  # ==================== 清理日志（不动） ====================
+  # ==============================================
+  #  任务2：自动清理所有运行日志（正常）
+  # ==============================================
   clean-logs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
     needs: bilibili-task
+
     steps:
       - name: 清理旧运行记录
         uses: Mattraks/delete-workflow-runs@v2
@@ -59,18 +65,23 @@ jobs:
           retain_days: 0
           keep_minimum_runs: 1
 
-  # ==================== 15天保活（不动） ====================
+  # ==============================================
+  #  任务3：15天保活（正常）
+  # ==============================================
   keepalive:
     runs-on: ubuntu-latest
     needs: clean-logs
     if: github.event_name == 'schedule'
+
     steps:
-      - uses: actions/checkout@v4
+      - name: 拉取代码
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 自动保活提交
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "🔄 15天自动保活"
+          git commit --allow-empty -m "🔄 15天自动保活 - 维持仓库活跃"
           git push
