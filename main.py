@@ -8,6 +8,17 @@ from bilibili import BilibiliTask
 import requests
 import json
 
+# ====================== 【国内IP代理：只给B站用，不影响pip】 ======================
+proxies = {}
+proxy_url = os.getenv("BILIBILI_PROXY")
+if proxy_url:
+    proxies = {
+        "http": proxy_url,
+        "https": proxy_url
+    }
+    logger.info(f"✅ 已启用B站专用国内代理: {proxy_url}")
+# ============================================================================
+
 class BeijingFormatter:
     """自定义日志格式化器，显示北京时间"""
     @staticmethod
@@ -201,6 +212,7 @@ def send_to_pushplus(token, title, content):
     url = "http://www.pushplus.plus/send"
     data = {"token": token, "title": title, "content": content, "template": "markdown"}
     try:
+        # 推送不走代理，避免超时
         res = requests.post(url, json=data, timeout=10)
         if res.json().get('code') == 200:
             logger.info('✅ PushPlus 推送成功！')
@@ -222,6 +234,7 @@ def send_to_telegram(bot_token, chat_id, content):
         "disable_web_page_preview": True
     }
     try:
+        # TG推送不走代理，避免超时
         response = requests.post(url, data=data, timeout=10)
         result = response.json()
         if result.get("ok"):
@@ -259,7 +272,13 @@ def main():
         logger.info(f"开始处理账号{idx}/{len(cookies)}")
         logger.info(f"{'='*40}")
         
+        # ====================== 注入代理 ======================
         bili = BilibiliTask(cookie)
+        # 给 BilibiliTask 挂载代理
+        if hasattr(bili, 'session'):
+            bili.session.proxies.update(proxies)
+        # ======================================================
+        
         tasks, user = run_all_tasks_for_account(bili, config)
 
         all_results.append({
