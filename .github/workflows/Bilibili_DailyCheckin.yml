@@ -1,14 +1,14 @@
 # ==============================================
 #  B站每日自动签到 + 自动清日志 + 15天保活
-#  时间：每天 凌晨 00:00（北京时间）
+#  时间：每天 凌晨 00:15（北京时间）
 #  防Cookie3天失效 加强版
 # ==============================================
 name: Bilibili每日签到+清日志+15天保活
 
 on:
   schedule:
-    - cron: '15 16 * * *'         # 错开高峰：00:15 执行
-    - cron: '35 16 * * *'         # 双时间随机，避免规律触发风控
+    # 只保留一个 cron：UTC 16:15 -> 北京时间 00:15
+    - cron: '15 16 * * *'
   workflow_dispatch:
 
 jobs:
@@ -66,8 +66,21 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "🔄 15天自动保活"
-          git push
+      - name: 15天自动保活 (避免Workflow被停)
+        run: |
+          # 计算距离上次提交的天数
+          LAST_COMMIT_DATE=$(git log -1 --format=%ct)
+          CURRENT_DATE=$(date +%s)
+          DAYS_SINCE_LAST=$(( (CURRENT_DATE - LAST_COMMIT_DATE) / 86400 ))
+          
+          echo "距离上次空提交已过去: $DAYS_SINCE_LAST 天"
+          
+          # 如果超过14天没提交，就提交一次空的来保活
+          if [ "$DAYS_SINCE_LAST" -gt 14 ]; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "🔄 15天自动保活"
+            git push
+          else
+            echo "未达15天，跳过保活提交。"
+          fi
