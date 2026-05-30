@@ -1,7 +1,5 @@
 import os
 import sys
-import time
-import random
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from bilibili import BilibiliTask
@@ -9,34 +7,8 @@ import requests
 import json
 
 # ==============================================
-#  B站 Cookie 防风控 核心修复（必开！）
+#  已删除：所有防风控代码（随机启动延迟、UA伪装）
 # ==============================================
-# 随机延迟 20-120 秒启动，避免机器人行为
-if os.getenv("RANDOM_SLEEP", "true").lower() == "true":
-    sleep_sec = random.randint(20, 120)
-    logger.info(f"[防风控] 随机延迟 {sleep_sec} 秒后启动...")
-    time.sleep(sleep_sec)
-
-# 全局强制覆盖 UA 和请求头，伪装成真实电脑浏览器
-REAL_BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Referer": "https://www.bilibili.com/",
-    "Origin": "https://www.bilibili.com",
-    "Sec-Ch-Ua": '"Chromium";v="130", "Not=A?Brand";v="99", "Microsoft Edge";v="130"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-site",
-}
-
-# 强制给 BilibiliTask 加上真实请求头
-original_init = BilibiliTask.__init__
-def patched_init(self, cookie):
-    original_init(self, cookie)
-    self.headers.update(REAL_BROWSER_HEADERS)
-    logger.info("[防风控] 已加载真实浏览器请求头 ✅")
-BilibiliTask.__init__ = patched_init
 
 class BeijingFormatter:
     """自定义日志格式化器，显示北京时间"""
@@ -154,8 +126,6 @@ def execute_coin_task(bili, user_info, config):
             continue
         else:
             logger.warning(f"❌ 投币失败: {msg}")
-        
-        time.sleep(random.uniform(1.5, 3))  # 防风控：延迟加长
     
     # 9. 返回结果
     if success > 0:
@@ -182,19 +152,15 @@ def run_all_tasks_for_account(bili, config):
     # 执行各项任务
     logger.info("--- 开始执行分享任务 ---")
     tasks_result['分享视频'] = bili.share_video(bvid)
-    time.sleep(random.uniform(2,4))
     
     logger.info("--- 开始执行直播签到 ---")
     tasks_result['直播签到'] = bili.live_sign()
-    time.sleep(random.uniform(2,4))
     
     logger.info("--- 开始执行漫画签到 ---")
     tasks_result['漫画签到'] = bili.manga_sign()
-    time.sleep(random.uniform(2,4))
     
     logger.info("--- 开始执行投币任务 ---")
     tasks_result['投币任务'] = execute_coin_task(bili, user_info, config)
-    time.sleep(random.uniform(2,4))
     
     logger.info("--- 开始执行观看任务 ---")
     tasks_result['观看视频'] = bili.watch_video(bvid)
@@ -311,12 +277,6 @@ def main():
         logger.info(f"{'='*40}")
         logger.info(f"账号{idx} 任务完成")
         logger.info(f"{'='*40}\n")
-        
-        # 账号间延迟
-        if idx < len(cookies):
-            delay = random.uniform(6, 12)
-            logger.info(f"[防风控] 等待 {delay:.1f} 秒后处理下一个账号...")
-            time.sleep(delay)
 
     # 生成并发送报告
     if all_results:
